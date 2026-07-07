@@ -93,14 +93,14 @@ MODE_CONFIG[MODES.COEFF_BASIC] = {
   title: "係数バランス（きほん）",
   shortLabel: "係数・き",
   questions: 10,
-  grades: { ss: 80, s: 135, a: 220, b: 330 },
+  grades: { ss: 50, s: 85, a: 135, b: 200 },
   masterTitle: "バランスマスター!!",
 };
 MODE_CONFIG[MODES.COEFF_CHALLENGE] = {
   title: "係数バランス（チャレンジ）",
   shortLabel: "係数・チ",
   questions: 10,
-  grades: { ss: 80, s: 135, a: 220, b: 330 },
+  grades: { ss: 90, s: 150, a: 240, b: 350 },
   masterTitle: "バランスマスター!!",
 };
 MODE_CONFIG[MODES.JUDGE] = {
@@ -378,13 +378,13 @@ function EquationStatic(props) {
       const c = coeffs ? coeffs[i] : side[i].coeff;
       if (c > 1) {
         nodes.push(
-          <span key={keyPrefix + "c" + i} className="mr-0.5 font-black text-amber-300">
+          <span key={keyPrefix + "c" + i} className="mr-0.5 font-extrabold text-amber-300">
             {c}
           </span>
         );
       }
       nodes.push(
-        <FormulaText key={keyPrefix + "f" + i} formula={side[i].formula} className="font-black" />
+        <FormulaText key={keyPrefix + "f" + i} formula={side[i].formula} className="font-extrabold" />
       );
     }
     return nodes;
@@ -397,7 +397,7 @@ function EquationStatic(props) {
       }
     >
       {renderSide(eq.left, leftCoeffs, "L")}
-      <span className="mx-2 font-black text-sky-300">→</span>
+      <span className="mx-2 font-bold text-sky-300">→</span>
       {renderSide(eq.right, rightCoeffs, "R")}
     </span>
   );
@@ -437,7 +437,7 @@ function AtomHintPanel(props) {
             <div
               key={el}
               className={
-                "flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-sm font-black " +
+                "flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-sm font-bold " +
                 (ok
                   ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
                   : "border-rose-400/40 bg-rose-500/15 text-rose-200")
@@ -509,10 +509,47 @@ function makeFormulaQuestions(level) {
   });
 }
 
+/**
+ * 係数バランスの出題
+ * - きほん（level 1）: 空欄は1カ所だけ。残りの係数は印字済み（中2の式から出題）
+ * - チャレンジ（level 2）: すべての係数を入力（全反応式から出題）
+ * givenL / givenR: 印字済みの係数（null の場所が空欄）
+ */
 function makeCoeffQuestions(level) {
-  const pool = equationsByLevel(level);
+  const pool = level === 1 ? equationsByLevel(1) : EQUATIONS;
   return sampleN(pool, 10).map(function (eq) {
-    return { kind: "coeff", eq: eq };
+    let givenL;
+    let givenR;
+    if (level === 1) {
+      // 空欄にする場所を1つ選ぶ（係数2以上の場所を優先。全部1の式はどこでも）
+      const slots = [];
+      for (let i = 0; i < eq.left.length; i++) {
+        slots.push({ side: "L", idx: i, coeff: eq.left[i].coeff });
+      }
+      for (let i = 0; i < eq.right.length; i++) {
+        slots.push({ side: "R", idx: i, coeff: eq.right[i].coeff });
+      }
+      let candidates = [];
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i].coeff > 1) candidates.push(slots[i]);
+      }
+      if (candidates.length === 0) candidates = slots;
+      const blank = candidates[randInt(0, candidates.length - 1)];
+      givenL = eq.left.map(function (t, i) {
+        return blank.side === "L" && blank.idx === i ? null : t.coeff;
+      });
+      givenR = eq.right.map(function (t, i) {
+        return blank.side === "R" && blank.idx === i ? null : t.coeff;
+      });
+    } else {
+      givenL = eq.left.map(function () {
+        return null;
+      });
+      givenR = eq.right.map(function () {
+        return null;
+      });
+    }
+    return { kind: "coeff", eq: eq, givenL: givenL, givenR: givenR };
   });
 }
 
@@ -659,7 +696,7 @@ function ActionButton(props) {
   const variant = coalesce(props.variant, "primary");
   const compact = !!props.compact;
   const base =
-    "w-full rounded-2xl px-4 font-black shadow-sm transition active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 " +
+    "w-full rounded-2xl px-4 font-bold shadow-sm transition active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 " +
     (compact ? "py-3 text-sm" : "py-4 text-base");
   if (variant === "primary") {
     return (
@@ -728,7 +765,7 @@ function Overlay(props) {
         }
       >
         <div className="px-6 py-7 text-center">
-          <div className={"text-4xl font-black tracking-tight " + accent[kind]}>
+          <div className={"text-4xl font-extrabold tracking-tight " + accent[kind]}>
             {props.title}
           </div>
           {props.sub ? (
@@ -763,14 +800,14 @@ function HelpModal(props) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-white/70">あそび方</div>
-            <div className="text-lg font-black tracking-tight text-white">
+            <div className="text-lg font-bold tracking-tight text-white">
               化学反応式マスター
             </div>
           </div>
           <button
             type="button"
             onClick={props.onClose}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/80 hover:bg-white/10"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10"
           >
             とじる
           </button>
@@ -778,28 +815,30 @@ function HelpModal(props) {
 
         <div className="mt-4 space-y-3 text-sm text-white/80">
           <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-3">
-            <div className="font-black text-cyan-200">STEP1 化学式マッチ</div>
+            <div className="font-bold text-cyan-200">STEP1 化学式マッチ</div>
             <div className="mt-1">
               物質名と化学式を対応づけよう。正しい選択肢をタップ！
             </div>
           </div>
           <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-3">
-            <div className="font-black text-violet-200">STEP2 係数バランス</div>
+            <div className="font-bold text-violet-200">STEP2 係数バランス</div>
             <div className="mt-1">
-              マスをタップ → 数字をタップで係数を入力。左右の原子の数がそろったら正解！
-              係数は<span className="font-black">最も簡単な整数比</span>で。
+              ▢に数字を入れて、左右の原子の数をそろえよう。
+              <span className="font-bold">きほんは空欄が1カ所だけ</span>
+              （ほかの係数は印字済み）。チャレンジは全部の係数を自分で入力！
+              係数は<span className="font-bold">最も簡単な整数比</span>で。
               ふつう「1」は書かないけど、このゲームでは 1 も入力してね。
             </div>
           </div>
           <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
-            <div className="font-black text-amber-200">STEP3 ○×ジャッジ</div>
+            <div className="font-bold text-amber-200">STEP3 ○×ジャッジ</div>
             <div className="mt-1">
               表示された反応式がつり合っていれば○、まちがっていれば×を瞬時に判定！
               ミスすると＋5秒のペナルティ。
             </div>
           </div>
           <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
-            <div className="font-black text-rose-200">STEP4 組み立てラボ</div>
+            <div className="font-bold text-rose-200">STEP4 組み立てラボ</div>
             <div className="mt-1">
               実験の説明文を読んで、カードから物質を選び、係数も入れて反応式を完成させよう。
             </div>
@@ -814,7 +853,7 @@ function HelpModal(props) {
               ・正解の表示中はタイマーが止まる。あせらず式を確認しよう！
             </li>
             <li>・効果音はホーム右上のボタンで ON にできる（最初は OFF）。</li>
-            <li className="font-black text-amber-200/90">
+            <li className="font-bold text-amber-200/90">
               ・STEP3・STEP4 は裏モード！ STEP1・STEP2 の4つすべてで
               Sランク以上をとると解放される。
             </li>
@@ -855,13 +894,13 @@ function ModeCard(props) {
           <div className="flex items-center gap-2">
             <span
               className={
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-black " +
+                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold " +
                 st.badge
               }
             >
               {props.step}
             </span>
-            <span className="text-base font-black tracking-tight text-white">
+            <span className="text-base font-bold tracking-tight text-white">
               {props.title}
             </span>
           </div>
@@ -894,7 +933,7 @@ function StartButton(props) {
       recNode = (
         <span className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-white/55">
           <span>ベスト {formatSeconds(rec.sec)}s</span>
-          <span className={"text-[13px] font-black leading-none " + gColor}>{g}</span>
+          <span className={"text-[13px] font-bold leading-none " + gColor}>{g}</span>
         </span>
       );
     } else {
@@ -916,7 +955,7 @@ function StartButton(props) {
     return (
       <button
         type="button"
-        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-black text-white"
+        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-bold text-white"
       >
         {content}
       </button>
@@ -926,7 +965,7 @@ function StartButton(props) {
     <button
       type="button"
       onClick={props.onClick}
-      className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-black text-white transition hover:bg-white/15 active:scale-[0.99]"
+      className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-white/15 active:scale-[0.99]"
     >
       {content}
     </button>
@@ -1108,13 +1147,17 @@ export default function App() {
     setCheckLock(false);
     setOverlay(null);
     if (q && q.kind === "coeff") {
-      const l = [];
-      const r = [];
-      for (let i = 0; i < q.eq.left.length; i++) l.push(null);
-      for (let i = 0; i < q.eq.right.length; i++) r.push(null);
-      setCoeffL(l);
-      setCoeffR(r);
-      setSelPos({ side: "L", idx: 0 });
+      // 印字済みの係数はそのまま入り、空欄（null）だけ入力対象になる
+      setCoeffL(q.givenL.slice());
+      setCoeffR(q.givenR.slice());
+      let sel = null;
+      for (let i = 0; i < q.givenL.length; i++) {
+        if (q.givenL[i] === null && !sel) sel = { side: "L", idx: i };
+      }
+      for (let i = 0; i < q.givenR.length; i++) {
+        if (q.givenR[i] === null && !sel) sel = { side: "R", idx: i };
+      }
+      setSelPos(sel ? sel : { side: "L", idx: 0 });
     }
     if (q && q.kind === "build") {
       const l = [];
@@ -1381,10 +1424,17 @@ export default function App() {
     setSelPos({ side: fromSide, idx: fromIdx });
   }
 
+  function isEditableCoeffSlot(q, side, idx) {
+    if (q.kind !== "coeff") return true;
+    const given = side === "L" ? q.givenL : q.givenR;
+    return given[idx] === null;
+  }
+
   function onTapNumber(n) {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
     if (overlay || checkLock) return;
+    if (!isEditableCoeffSlot(q, selPos.side, selPos.idx)) return;
     setCoeffValue(selPos.side, selPos.idx, n);
     // 次の空き係数スロットへ
     const slots = currentSlots(q);
@@ -1657,30 +1707,30 @@ export default function App() {
             {MODE_CONFIG[mode].title}
             {phase === "review" ? "（復習）" : ""}
           </div>
-          <div className="text-lg font-black tabular-nums text-white">
+          <div className="text-lg font-bold tabular-nums text-white">
             {qIndex + 1}
             <span className="text-white/50"> / {questions.length}</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {streak >= 2 ? (
-            <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-2.5 py-1 text-xs font-black text-orange-200">
+            <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-2.5 py-1 text-xs font-bold text-orange-200">
               🔥{streak}
             </span>
           ) : null}
           {penaltySec > 0 ? (
-            <span className="rounded-full border border-rose-400/40 bg-rose-500/15 px-2.5 py-1 text-xs font-black text-rose-200">
+            <span className="rounded-full border border-rose-400/40 bg-rose-500/15 px-2.5 py-1 text-xs font-bold text-rose-200">
               ＋{penaltySec}s
             </span>
           ) : null}
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-lg font-black tabular-nums text-white">
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-lg font-extrabold tabular-nums text-white">
             {formatSeconds(elapsed)}
             <span className="ml-0.5 text-xs font-bold text-white/50">s</span>
           </div>
           <button
             type="button"
             onClick={quitToHome}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/70 hover:bg-white/10"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10"
           >
             やめる
           </button>
@@ -1715,13 +1765,13 @@ export default function App() {
           </div>
           <div className="mt-3">
             {isN2F ? (
-              <span className="text-3xl font-black tracking-tight sm:text-4xl">
+              <span className="text-3xl font-extrabold tracking-tight sm:text-4xl">
                 {q.sub.name}
               </span>
             ) : (
               <FormulaText
                 formula={q.sub.f}
-                className="text-4xl font-black tracking-tight sm:text-5xl"
+                className="text-4xl font-extrabold tracking-tight sm:text-5xl"
               />
             )}
           </div>
@@ -1760,9 +1810,9 @@ export default function App() {
                 }
               >
                 {isN2F ? (
-                  <FormulaText formula={opt.f} className="text-2xl font-black" />
+                  <FormulaText formula={opt.f} className="text-2xl font-bold" />
                 ) : (
-                  <span className="text-base font-black leading-snug sm:text-lg">
+                  <span className="text-base font-bold leading-snug sm:text-lg">
                     {opt.name}
                   </span>
                 )}
@@ -1784,7 +1834,7 @@ export default function App() {
         type="button"
         onClick={props.onClick}
         className={
-          "mr-0.5 inline-flex h-12 w-10 items-center justify-center rounded-xl border-2 align-middle text-xl font-black transition " +
+          "mr-0.5 inline-flex h-12 w-10 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
           (selected
             ? "border-sky-400 bg-sky-400/25 text-white"
             : value === null
@@ -1805,28 +1855,39 @@ export default function App() {
   function renderCoeffEquation(q) {
     function renderSide(side, sideKey) {
       const nodes = [];
+      const given = sideKey === "L" ? q.givenL : q.givenR;
       for (let i = 0; i < side.length; i++) {
         if (i > 0) {
           nodes.push(
-            <span key={sideKey + "p" + i} className="mx-1.5 text-white/60 text-2xl font-black">
+            <span key={sideKey + "p" + i} className="mx-1.5 text-white/60 text-2xl font-bold">
               ＋
             </span>
           );
         }
         const value = sideKey === "L" ? coeffL[i] : coeffR[i];
         const selected = selPos.side === sideKey && selPos.idx === i;
+        const isGiven = given[i] !== null;
         nodes.push(
           <span key={sideKey + "t" + i} className="inline-flex items-center whitespace-nowrap py-1">
-            <CoeffSlotButton
-              value={isNil(value) ? null : value}
-              selected={selected}
-              onClick={function () {
-                setSelPos({ side: sideKey, idx: i });
-              }}
-            />
+            {isGiven ? (
+              // 印字済みの係数は正式な書き方（1 は書かない）で表示
+              given[i] > 1 ? (
+                <span className="mr-0.5 text-2xl font-extrabold text-white/85 sm:text-3xl">
+                  {given[i]}
+                </span>
+              ) : null
+            ) : (
+              <CoeffSlotButton
+                value={isNil(value) ? null : value}
+                selected={selected}
+                onClick={function () {
+                  setSelPos({ side: sideKey, idx: i });
+                }}
+              />
+            )}
             <FormulaText
               formula={side[i].formula}
-              className="text-2xl font-black sm:text-3xl"
+              className="text-2xl font-extrabold sm:text-3xl"
             />
           </span>
         );
@@ -1842,7 +1903,7 @@ export default function App() {
         }
       >
         {renderSide(q.eq.left, "L")}
-        <span className="mx-2 text-2xl font-black text-sky-300 sm:mx-3">→</span>
+        <span className="mx-2 text-2xl font-bold text-sky-300 sm:mx-3">→</span>
         {renderSide(q.eq.right, "R")}
       </div>
     );
@@ -1861,7 +1922,7 @@ export default function App() {
                 onClick={function () {
                   onTapNumber(n);
                 }}
-                className="h-14 rounded-2xl border border-white/10 bg-white/10 text-2xl font-black text-white transition hover:bg-white/15 active:scale-[0.97]"
+                className="h-14 rounded-2xl border border-white/10 bg-white/10 text-2xl font-bold text-white transition hover:bg-white/15 active:scale-[0.97]"
               >
                 {n}
               </button>
@@ -1878,6 +1939,13 @@ export default function App() {
   }
 
   function renderCoeffRun(q) {
+    let blankCount = 0;
+    for (let i = 0; i < q.givenL.length; i++) {
+      if (q.givenL[i] === null) blankCount++;
+    }
+    for (let i = 0; i < q.givenR.length; i++) {
+      if (q.givenR[i] === null) blankCount++;
+    }
     return (
       <div className="mt-6">
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -1893,7 +1961,9 @@ export default function App() {
           ) : null}
         </div>
         <div className="mt-2 text-center text-[11px] font-bold text-white/45">
-          マスをタップ → 数字をタップ（係数1のときは「1」を入力）
+          {blankCount === 1
+            ? "▢に入る係数を数字でこたえよう（1が入るときは「1」）"
+            : "マスをタップ → 数字をタップ（係数1のときは「1」を入力）"}
         </div>
         {renderNumberPad(q, onCheckCoeff, allCoeffFilled(q) && !overlay && !checkLock)}
       </div>
@@ -1924,7 +1994,7 @@ export default function App() {
             onClick={function () {
               onJudge(true);
             }}
-            className="h-24 rounded-3xl border border-emerald-400/30 bg-emerald-500/15 text-5xl font-black text-emerald-200 transition hover:bg-emerald-500/25 active:scale-[0.98]"
+            className="h-24 rounded-3xl border border-emerald-400/30 bg-emerald-500/15 text-5xl font-extrabold text-emerald-200 transition hover:bg-emerald-500/25 active:scale-[0.98]"
           >
             ○
           </button>
@@ -1933,7 +2003,7 @@ export default function App() {
             onClick={function () {
               onJudge(false);
             }}
-            className="h-24 rounded-3xl border border-rose-400/30 bg-rose-500/15 text-5xl font-black text-rose-200 transition hover:bg-rose-500/25 active:scale-[0.98]"
+            className="h-24 rounded-3xl border border-rose-400/30 bg-rose-500/15 text-5xl font-extrabold text-rose-200 transition hover:bg-rose-500/25 active:scale-[0.98]"
           >
             ×
           </button>
@@ -1953,7 +2023,7 @@ export default function App() {
       for (let i = 0; i < side.length; i++) {
         if (i > 0) {
           nodes.push(
-            <span key={sideKey + "p" + i} className="mx-1 text-xl font-black text-white/60">
+            <span key={sideKey + "p" + i} className="mx-1 text-xl font-bold text-white/60">
               ＋
             </span>
           );
@@ -1992,9 +2062,9 @@ export default function App() {
               }
             >
               {sub ? (
-                <FormulaText formula={sub} className="text-xl font-black" />
+                <FormulaText formula={sub} className="text-xl font-extrabold" />
               ) : (
-                <span className="text-sm font-black text-white/35">？</span>
+                <span className="text-sm font-bold text-white/35">？</span>
               )}
             </button>
           </span>
@@ -2011,7 +2081,7 @@ export default function App() {
         }
       >
         {renderSide(q.eq.left, "L", subL)}
-        <span className="mx-2 text-2xl font-black text-sky-300">→</span>
+        <span className="mx-2 text-2xl font-bold text-sky-300">→</span>
         {renderSide(q.eq.right, "R", subR)}
       </div>
     );
@@ -2024,7 +2094,7 @@ export default function App() {
       <div className="mt-5">
         <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 px-4 py-4 text-center">
           <div className="text-[11px] font-bold text-rose-200/80">実験・操作</div>
-          <div className="mt-1 text-base font-black leading-relaxed text-white sm:text-lg">
+          <div className="mt-1 text-base font-bold leading-relaxed text-white sm:text-lg">
             {q.eq.desc}
           </div>
         </div>
@@ -2061,7 +2131,7 @@ export default function App() {
                     : "border-white/10 bg-white/10 text-white hover:bg-white/15")
                 }
               >
-                <FormulaText formula={f} className="text-lg font-black" />
+                <FormulaText formula={f} className="text-lg font-bold" />
               </button>
             );
           })}
@@ -2098,7 +2168,7 @@ export default function App() {
       <div className="flex min-h-[80vh] items-center justify-center">
         <div
           key={countdownStep}
-          className="text-center text-7xl font-black tracking-tight text-white animate-countpop sm:text-8xl"
+          className="text-center text-7xl font-extrabold tracking-tight text-white animate-countpop sm:text-8xl"
         >
           {labels[countdownStep]}
         </div>
@@ -2113,7 +2183,7 @@ export default function App() {
       return (
         <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5">
           <span className="text-sm font-bold text-white/80">{q.sub.name}</span>
-          <FormulaText formula={q.sub.f} className="text-lg font-black" />
+          <FormulaText formula={q.sub.f} className="text-lg font-bold" />
         </div>
       );
     }
@@ -2158,25 +2228,25 @@ export default function App() {
             {MODE_CONFIG[lastResult.mode].title}
             {lastResult.phase === "review" ? "（復習）" : ""}
           </div>
-          <div className="mt-4 text-6xl font-black tabular-nums text-white">
+          <div className="mt-4 text-6xl font-extrabold tabular-nums text-white">
             {formatSeconds(lastResult.sec)}
             <span className="ml-1 text-2xl text-white/50">s</span>
           </div>
           {lastResult.phase === "main" ? (
-            <div className={"mt-3 text-5xl font-black " + gradeColor}>{gr.grade}</div>
+            <div className={"mt-3 text-5xl font-extrabold " + gradeColor}>{gr.grade}</div>
           ) : null}
-          <div className="mt-3 text-lg font-black text-white">{gr.title}</div>
+          <div className="mt-3 text-lg font-bold text-white">{gr.title}</div>
           <div className="mx-auto mt-1 max-w-sm text-sm text-white/65">
             {gr.comment}
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             {lastResult.isNewBest ? (
-              <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-3 py-1 text-xs font-black text-amber-200">
+              <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-3 py-1 text-xs font-bold text-amber-200">
                 ★ ベスト記録を更新！
               </span>
             ) : null}
             {noMiss ? (
-              <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-xs font-black text-emerald-200">
+              <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-200">
                 ✨ ノーミス達成！
               </span>
             ) : null}
@@ -2184,7 +2254,7 @@ export default function App() {
           {next ? (
             <div className="mt-3 text-xs font-bold text-white/60">
               つぎは
-              <span className="mx-1 text-sm font-black text-white">
+              <span className="mx-1 text-sm font-bold text-white">
                 {next.rank}
               </span>
               ランク：{next.limit}秒{next.strict ? "未満" : "以内"}
@@ -2195,7 +2265,7 @@ export default function App() {
           ) : null}
           {lastResult.unlockedSecret ? (
             <div className="mt-4 rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-violet-500/20 px-4 py-4 animate-popin">
-              <div className="text-xl font-black text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.5)]">
+              <div className="text-xl font-bold text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.5)]">
                 🎉 裏モード解放！！
               </div>
               <div className="mt-1.5 text-xs font-bold leading-relaxed text-white/80">
@@ -2212,7 +2282,7 @@ export default function App() {
 
         {missed.length > 0 ? (
           <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-black text-white">
+            <div className="text-sm font-bold text-white">
               まちがえた問題（{missed.length}）
             </div>
             <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
@@ -2254,7 +2324,7 @@ export default function App() {
             <div className="text-xs font-bold tracking-widest text-sky-300/80">
               CHEMICAL EQUATION MASTER
             </div>
-            <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
+            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
               化学反応式マスター
             </h1>
             <div className="mt-2 text-sm font-bold text-white/60">
@@ -2267,7 +2337,7 @@ export default function App() {
               onClick={toggleSound}
               aria-label={soundOn ? "効果音をオフにする" : "効果音をオンにする"}
               className={
-                "rounded-2xl border px-3.5 py-3 text-base font-black transition " +
+                "rounded-2xl border px-3.5 py-3 text-base font-bold transition " +
                 (soundOn
                   ? "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
                   : "border-white/10 bg-white/5 text-white/35 hover:bg-white/10")
@@ -2280,7 +2350,7 @@ export default function App() {
               onClick={function () {
                 setShowHelp(true);
               }}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white/80 hover:bg-white/10"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 hover:bg-white/10"
             >
               あそび方
             </button>
@@ -2318,7 +2388,7 @@ export default function App() {
             step="STEP2"
             accent="violet"
             title="係数バランス"
-            detail="反応式の係数を入力して、左右の原子の数をそろえよう（10問）"
+            detail="係数を入力して左右の原子の数をそろえよう（10問）。きほんは空欄1カ所、チャレンジは全部入力！"
           >
             <StartButton
               mode={MODES.COEFF_BASIC}
@@ -2420,7 +2490,7 @@ export default function App() {
       {toast ? (
         <div
           key={toast.key}
-          className="fixed bottom-6 left-1/2 z-[55] w-[90%] max-w-md -translate-x-1/2 rounded-2xl border border-amber-300/40 bg-amber-500/90 px-4 py-3 text-center text-sm font-black text-slate-950 shadow-xl animate-popin"
+          className="fixed bottom-6 left-1/2 z-[55] w-[90%] max-w-md -translate-x-1/2 rounded-2xl border border-amber-300/40 bg-amber-500/90 px-4 py-3 text-center text-sm font-bold text-slate-950 shadow-xl animate-popin"
         >
           {toast.text}
         </div>
