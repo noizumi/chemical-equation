@@ -73,46 +73,48 @@ const MODES = {
 
 const MODE_CONFIG = {};
 
+/* グレード基準タイム（秒）
+   正解演出中はタイマーが止まるため、純粋な解答時間で評価される */
 MODE_CONFIG[MODES.FORMULA_BASIC] = {
   title: "化学式マッチ（きほん）",
   shortLabel: "化学式・き",
   questions: 20,
-  grades: { ss: 40, s: 70, a: 105, b: 150 },
+  grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
 MODE_CONFIG[MODES.FORMULA_CHALLENGE] = {
   title: "化学式マッチ（チャレンジ）",
   shortLabel: "化学式・チ",
   questions: 20,
-  grades: { ss: 40, s: 70, a: 105, b: 150 },
+  grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
 MODE_CONFIG[MODES.COEFF_BASIC] = {
   title: "係数バランス（きほん）",
   shortLabel: "係数・き",
   questions: 10,
-  grades: { ss: 90, s: 150, a: 240, b: 360 },
+  grades: { ss: 80, s: 135, a: 220, b: 330 },
   masterTitle: "バランスマスター!!",
 };
 MODE_CONFIG[MODES.COEFF_CHALLENGE] = {
   title: "係数バランス（チャレンジ）",
   shortLabel: "係数・チ",
   questions: 10,
-  grades: { ss: 90, s: 150, a: 240, b: 360 },
+  grades: { ss: 80, s: 135, a: 220, b: 330 },
   masterTitle: "バランスマスター!!",
 };
 MODE_CONFIG[MODES.JUDGE] = {
   title: "○×ジャッジ",
   shortLabel: "○×",
   questions: 20,
-  grades: { ss: 35, s: 55, a: 80, b: 115 },
+  grades: { ss: 28, s: 42, a: 65, b: 95 },
   masterTitle: "ジャッジマスター!!",
 };
 MODE_CONFIG[MODES.BUILD] = {
   title: "組み立てラボ",
   shortLabel: "組み立て",
   questions: 5,
-  grades: { ss: 120, s: 200, a: 300, b: 420 },
+  grades: { ss: 110, s: 185, a: 280, b: 400 },
   masterTitle: "反応式マスター!!",
 };
 
@@ -211,18 +213,18 @@ function writeBestRecord(mode, sec) {
 
 /* ================= 効果音（WebAudio・設定は端末に保存） ================= */
 
-var SOUND = { on: true };
+var SOUND = { on: false };
 var audioCtxHolder = { ctx: null };
 
+/** 効果音は基本 OFF（静かに取り組む授業を想定）。ON にした設定だけ保存される */
 function readSoundPref() {
   try {
-    if (typeof window === "undefined") return true;
+    if (typeof window === "undefined") return false;
     const ls = window.localStorage;
-    if (!ls) return true;
-    const raw = ls.getItem("chemeq_sound_v1");
-    return raw === null ? true : raw === "on";
+    if (!ls) return false;
+    return ls.getItem("chemeq_sound_v1") === "on";
   } catch (e) {
-    return true;
+    return false;
   }
 }
 
@@ -718,7 +720,6 @@ function Overlay(props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-6 animate-fadein"
       role="status"
       aria-live="polite"
-      onClick={props.onSkip}
     >
       <div
         className={
@@ -734,11 +735,9 @@ function Overlay(props) {
             <div className="mt-2 text-sm font-bold text-white/75">{props.sub}</div>
           ) : null}
           {props.children ? <div className="mt-3">{props.children}</div> : null}
-          {props.onSkip ? (
-            <div className="mt-4 text-[10px] font-bold text-white/40">
-              タップですすむ
-            </div>
-          ) : null}
+          <div className="mt-4 text-[10px] font-bold text-white/40">
+            ⏸ タイマーはとまっているよ
+          </div>
         </div>
       </div>
     </div>
@@ -796,7 +795,7 @@ function HelpModal(props) {
             <div className="font-black text-amber-200">STEP3 ○×ジャッジ</div>
             <div className="mt-1">
               表示された反応式がつり合っていれば○、まちがっていれば×を瞬時に判定！
-              ミスすると＋3秒のペナルティ。
+              ミスすると＋5秒のペナルティ。
             </div>
           </div>
           <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
@@ -811,8 +810,10 @@ function HelpModal(props) {
             <li>・結果画面の「復習」で、まちがえた問題だけやり直せる。</li>
             <li>・ベスト記録はこの端末に保存される。</li>
             <li>・連続で正解するとコンボ🔥がつながる。ノーミスをめざそう！</li>
-            <li>・正解の表示はタップで飛ばせる（タイム短縮！）。</li>
-            <li>・効果音はホーム右上の🔊ボタンで ON/OFF。</li>
+            <li>
+              ・正解の表示中はタイマーが止まる。あせらず式を確認しよう！
+            </li>
+            <li>・効果音はホーム右上のボタンで ON にできる（最初は OFF）。</li>
             <li className="font-black text-amber-200/90">
               ・STEP3・STEP4 は裏モード！ STEP1・STEP2 の4つすべてで
               Sランク以上をとると解放される。
@@ -950,6 +951,10 @@ export default function App() {
   const penaltyRef = useRef(0);
   const [penaltySec, setPenaltySec] = useState(0);
 
+  // 正解演出（オーバーレイ）中はタイマーを止める
+  const pauseStartRef = useRef(null);
+  const totalPausedMsRef = useRef(0);
+
   const missedRef = useRef({});
   const [wrongTaps, setWrongTaps] = useState(0);
 
@@ -1016,15 +1021,35 @@ export default function App() {
 
   /* ---------- タイマー ---------- */
 
+  function currentElapsedSec() {
+    if (startMsRef.current === null) return 0;
+    let pausedMs = totalPausedMsRef.current;
+    if (pauseStartRef.current !== null) {
+      pausedMs += Date.now() - pauseStartRef.current;
+    }
+    return (
+      (Date.now() - startMsRef.current - pausedMs) / 1000 + penaltyRef.current
+    );
+  }
+
+  function pauseTimer() {
+    if (pauseStartRef.current === null) {
+      pauseStartRef.current = Date.now();
+    }
+  }
+
+  function resumeTimer() {
+    if (pauseStartRef.current !== null) {
+      totalPausedMsRef.current += Date.now() - pauseStartRef.current;
+      pauseStartRef.current = null;
+    }
+  }
+
   useEffect(
     function () {
       if (screen !== "run") return undefined;
       const t = setInterval(function () {
-        if (startMsRef.current !== null) {
-          setElapsed(
-            (Date.now() - startMsRef.current) / 1000 + penaltyRef.current
-          );
-        }
+        setElapsed(currentElapsedSec());
       }, 100);
       return function () {
         clearInterval(t);
@@ -1050,6 +1075,8 @@ export default function App() {
       playStart();
       const t2 = setTimeout(function () {
         startMsRef.current = Date.now();
+        pauseStartRef.current = null;
+        totalPausedMsRef.current = 0;
         setElapsed(0);
         setScreen("run");
       }, 500);
@@ -1176,10 +1203,7 @@ export default function App() {
   }
 
   function finishRun() {
-    const sec =
-      (startMsRef.current !== null
-        ? (Date.now() - startMsRef.current) / 1000
-        : 0) + penaltyRef.current;
+    const sec = currentElapsedSec();
     const qs = questionsRef.current;
     const missedQuestions = [];
     for (let i = 0; i < qs.length; i++) {
@@ -1222,6 +1246,7 @@ export default function App() {
 
   function goNext() {
     clearTransientTimers();
+    resumeTimer();
     setOverlay(null);
     const next = qIndexRef.current + 1;
     if (next >= questionsRef.current.length) {
@@ -1276,6 +1301,7 @@ export default function App() {
     const opt = q.options[idx];
     if (opt.f === q.sub.f) {
       onSolved();
+      pauseTimer();
       setOptFlash({ idx: idx, kind: "correct" });
       scheduleAdvance(300);
     } else {
@@ -1397,6 +1423,7 @@ export default function App() {
     const res = checkBalance(q.eq, coeffL, coeffR);
     if (res.balanced && res.simplest) {
       onSolved();
+      pauseTimer();
       setCheckLock(true);
       setOverlay({
         kind: "correct",
@@ -1406,7 +1433,7 @@ export default function App() {
           <EquationStatic eq={q.eq} leftCoeffs={coeffL} rightCoeffs={coeffR} />
         ),
       });
-      scheduleAdvance(1400);
+      scheduleAdvance(1000);
     } else if (res.balanced && !res.simplest) {
       playInfo();
       showToast("つり合っているけど…もっと簡単な整数比にできるよ！");
@@ -1553,6 +1580,7 @@ export default function App() {
 
     if (ok) {
       onSolved();
+      pauseTimer();
       setCheckLock(true);
       setOverlay({
         kind: "correct",
@@ -1560,7 +1588,7 @@ export default function App() {
         sub: q.eq.desc,
         node: <EquationStatic eq={q.eq} />,
       });
-      scheduleAdvance(1500);
+      scheduleAdvance(1100);
     } else {
       markMissed();
       setHintOn(true);
@@ -1587,6 +1615,7 @@ export default function App() {
     if (!q || q.kind !== "judge") return;
     if (overlay || checkLock) return;
     setCheckLock(true);
+    pauseTimer();
     const right = saidCorrect === q.correct;
     if (right) {
       onSolved();
@@ -1604,11 +1633,11 @@ export default function App() {
       }
     } else {
       markMissed();
-      penaltyRef.current += 3;
+      penaltyRef.current += 5;
       setPenaltySec(penaltyRef.current);
       setOverlay({
         kind: "wrong",
-        title: "ざんねん…（＋3秒）",
+        title: "ざんねん…（＋5秒）",
         sub: q.correct ? "これは正しい式だった！" : "正しくはこう：",
         node: <EquationStatic eq={q.eq} />,
       });
@@ -1910,7 +1939,7 @@ export default function App() {
           </button>
         </div>
         <div className="mt-3 text-center text-[11px] font-bold text-white/45">
-          つり合っていれば○・まちがいなら×（ミスすると＋3秒）
+          つり合っていれば○・まちがいなら×（ミスすると＋5秒）
         </div>
       </div>
     );
@@ -2383,12 +2412,7 @@ export default function App() {
       </div>
 
       {overlay ? (
-        <Overlay
-          kind={overlay.kind}
-          title={overlay.title}
-          sub={overlay.sub}
-          onSkip={goNext}
-        >
+        <Overlay kind={overlay.kind} title={overlay.title} sub={overlay.sub}>
           {overlay.node}
         </Overlay>
       ) : null}
