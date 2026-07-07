@@ -760,14 +760,49 @@ function ModeCard(props) {
 }
 
 function StartButton(props) {
+  // ボタン自体にそのモードのベスト記録を表示する（記録とボタンの対応を直感的に）
+  const rec = props.best;
+  const hasRec = rec && typeof rec.sec === "number" && isFinite(rec.sec);
+  let recNode = null;
+  if (props.mode) {
+    if (hasRec) {
+      const g = gradeFor(props.mode, rec.sec).grade;
+      const gColor =
+        g === "SS"
+          ? "text-amber-300 [text-shadow:0_0_8px_rgba(251,191,36,0.55)]"
+          : g === "S"
+            ? "text-emerald-300"
+            : g === "A"
+              ? "text-sky-300"
+              : "text-white/80";
+      recNode = (
+        <span className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-white/55">
+          <span>ベスト {formatSeconds(rec.sec)}s</span>
+          <span className={"text-[13px] font-black leading-none " + gColor}>{g}</span>
+        </span>
+      );
+    } else {
+      recNode = (
+        <span className="mt-1.5 block text-[10px] font-bold leading-none text-white/35">
+          ベスト --.-s
+        </span>
+      );
+    }
+  }
+  const content = (
+    <span className="flex flex-col items-center justify-center">
+      <span>{props.children}</span>
+      {recNode}
+    </span>
+  );
   // inert: 裏モードが未解放のあいだ、見た目はそのままでタップしても反応しない
   if (props.inert) {
     return (
       <button
         type="button"
-        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-3 text-sm font-black text-white"
+        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-black text-white"
       >
-        {props.children}
+        {content}
       </button>
     );
   }
@@ -775,9 +810,9 @@ function StartButton(props) {
     <button
       type="button"
       onClick={props.onClick}
-      className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-3 text-sm font-black text-white transition hover:bg-white/15 active:scale-[0.99]"
+      className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-black text-white transition hover:bg-white/15 active:scale-[0.99]"
     >
-      {props.children}
+      {content}
     </button>
   );
 }
@@ -1969,41 +2004,6 @@ export default function App() {
 
   /* ----- ホーム ----- */
 
-  function bestCell(modeKey) {
-    const rec = bestByMode[modeKey];
-    const has = rec && typeof rec.sec === "number" && isFinite(rec.sec);
-    const time = has ? formatSeconds(rec.sec) + "s" : "--.-s";
-    const grade = has ? gradeFor(modeKey, rec.sec).grade : "-";
-    const isSS = has && grade === "SS";
-    return (
-      <div key={modeKey} className="flex flex-col items-center justify-center px-1 py-3">
-        <div className="whitespace-nowrap text-[10px] font-semibold text-white/60">
-          {MODE_CONFIG[modeKey].shortLabel}
-        </div>
-        <div
-          className={
-            "mt-1 text-sm font-black tabular-nums " +
-            (isSS
-              ? "text-amber-300 [text-shadow:0_0_8px_rgba(251,191,36,0.55)]"
-              : "text-white/90")
-          }
-        >
-          {time}
-        </div>
-        <div
-          className={
-            "mt-0.5 text-lg font-black " +
-            (isSS
-              ? "text-amber-300 [text-shadow:0_0_10px_rgba(251,191,36,0.6)]"
-              : "text-white")
-          }
-        >
-          {grade}
-        </div>
-      </div>
-    );
-  }
-
   function renderHome() {
     const secretUnlocked = isSecretUnlocked(bestByMode);
     return (
@@ -2039,6 +2039,8 @@ export default function App() {
             detail="物質名と化学式を対応づけよう（20問）。まずはここから！"
           >
             <StartButton
+              mode={MODES.FORMULA_BASIC}
+              best={bestByMode[MODES.FORMULA_BASIC]}
               onClick={function () {
                 startMode(MODES.FORMULA_BASIC);
               }}
@@ -2046,6 +2048,8 @@ export default function App() {
               きほん
             </StartButton>
             <StartButton
+              mode={MODES.FORMULA_CHALLENGE}
+              best={bestByMode[MODES.FORMULA_CHALLENGE]}
               onClick={function () {
                 startMode(MODES.FORMULA_CHALLENGE);
               }}
@@ -2061,6 +2065,8 @@ export default function App() {
             detail="反応式の係数を入力して、左右の原子の数をそろえよう（10問）"
           >
             <StartButton
+              mode={MODES.COEFF_BASIC}
+              best={bestByMode[MODES.COEFF_BASIC]}
               onClick={function () {
                 startMode(MODES.COEFF_BASIC);
               }}
@@ -2068,6 +2074,8 @@ export default function App() {
               きほん
             </StartButton>
             <StartButton
+              mode={MODES.COEFF_CHALLENGE}
+              best={bestByMode[MODES.COEFF_CHALLENGE]}
               onClick={function () {
                 startMode(MODES.COEFF_CHALLENGE);
               }}
@@ -2083,6 +2091,8 @@ export default function App() {
             detail="この反応式、あってる？ 瞬時に見きわめよう（20問）"
           >
             <StartButton
+              mode={MODES.JUDGE}
+              best={bestByMode[MODES.JUDGE]}
               inert={!secretUnlocked}
               onClick={function () {
                 startMode(MODES.JUDGE);
@@ -2099,6 +2109,8 @@ export default function App() {
             detail="実験の説明から反応式をまるごと組み立てる、最終ステージ（5問）"
           >
             <StartButton
+              mode={MODES.BUILD}
+              best={bestByMode[MODES.BUILD]}
               inert={!secretUnlocked}
               onClick={function () {
                 startMode(MODES.BUILD);
@@ -2109,33 +2121,9 @@ export default function App() {
           </ModeCard>
         </div>
 
-        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-base font-black tracking-tight text-white">
-                ベスト記録
-              </div>
-              <div className="mt-1 text-xs text-white/55">この端末に保存</div>
-            </div>
-            <div className="mt-1 shrink-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80">
-              BEST
-            </div>
-          </div>
-          <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-            <div className="grid grid-cols-3 divide-x divide-white/10">
-              {bestCell(MODES.FORMULA_BASIC)}
-              {bestCell(MODES.FORMULA_CHALLENGE)}
-              {bestCell(MODES.JUDGE)}
-            </div>
-            <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10">
-              {bestCell(MODES.COEFF_BASIC)}
-              {bestCell(MODES.COEFF_CHALLENGE)}
-              {bestCell(MODES.BUILD)}
-            </div>
-          </div>
-        </div>
-
         <div className="mt-6 text-center text-[11px] leading-relaxed text-white/35">
+          ベスト記録は各ボタンに表示（この端末に保存）
+          <br />
           係数は「最も簡単な整数比」で入力（1 も入力してね）
           <br />
           中学範囲の頻出化学反応式（イオン反応式を除く）を収録
