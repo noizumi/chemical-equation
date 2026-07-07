@@ -1,0 +1,79 @@
+/**
+ * データ検証スクリプト
+ *   node scripts/validate.mjs
+ * - すべての反応式が「つり合っている」「最も簡単な整数比」であることを確認
+ * - 反応式に登場する化学式がすべて物質データに登録されていることを確認
+ */
+import { checkBalance, equationToUnicode, parseFormula } from "../src/chem.js";
+import { EQUATIONS, SUBSTANCES, substanceByFormula, quizSubstances, judgeEquations, buildEquations, equationsByLevel } from "../src/data.js";
+
+let errors = 0;
+
+function fail(msg) {
+  errors++;
+  console.error("NG: " + msg);
+}
+
+// 物質データの重複チェック
+const seen = new Set();
+for (const s of SUBSTANCES) {
+  if (seen.has(s.f)) fail("物質が重複: " + s.f);
+  seen.add(s.f);
+  const atoms = parseFormula(s.f);
+  if (Object.keys(atoms).length === 0) fail("化学式をパースできない: " + s.f);
+}
+
+// 反応式チェック
+const ids = new Set();
+for (const e of EQUATIONS) {
+  if (ids.has(e.id)) fail("反応式 id が重複: " + e.id);
+  ids.add(e.id);
+
+  const res = checkBalance(e);
+  if (!res.balanced) {
+    fail(
+      e.id + " がつり合っていない: " + equationToUnicode(e) +
+      "  left=" + JSON.stringify(res.leftAtoms) +
+      " right=" + JSON.stringify(res.rightAtoms)
+    );
+  }
+  if (!res.simplest) {
+    fail(e.id + " の係数が最も簡単な整数比でない: " + equationToUnicode(e));
+  }
+  for (const side of [e.left, e.right]) {
+    for (const item of side) {
+      if (!substanceByFormula(item.formula)) {
+        fail(e.id + " の化学式が物質データにない: " + item.formula);
+      }
+      if (item.coeff < 1 || item.coeff > 6 || item.coeff !== Math.floor(item.coeff)) {
+        fail(e.id + " の係数が 1〜6 の整数でない: " + item.coeff);
+      }
+    }
+  }
+}
+
+// プール数の確認（タイムアタックの出題数を満たすか）
+const basicSub = quizSubstances(1).length;
+const chalSub = quizSubstances(2).length;
+const basicEq = equationsByLevel(1).length;
+const chalEq = equationsByLevel(2).length;
+const jd = judgeEquations().length;
+const bd = buildEquations().length;
+
+console.log("物質: きほん " + basicSub + " / チャレンジ " + chalSub);
+console.log("反応式: きほん " + basicEq + " / チャレンジ " + chalEq);
+console.log("○×ジャッジ対象: " + jd + " / 組み立て対象: " + bd);
+
+if (basicSub < 20) fail("化学式マッチ（きほん）の物質が 20 未満");
+if (chalSub < 20) fail("化学式マッチ（チャレンジ）の物質が 20 未満");
+if (basicEq < 10) fail("係数バランス（きほん）の反応式が 10 未満");
+if (chalEq < 10) fail("係数バランス（チャレンジ）の反応式が 10 未満");
+if (jd < 20) fail("○×ジャッジの反応式が 20 未満");
+if (bd < 5) fail("組み立ての反応式が 5 未満");
+
+if (errors > 0) {
+  console.error("\n" + errors + " 件のエラー");
+  process.exit(1);
+} else {
+  console.log("\nすべて OK（" + EQUATIONS.length + " 反応式 / " + SUBSTANCES.length + " 物質）");
+}
