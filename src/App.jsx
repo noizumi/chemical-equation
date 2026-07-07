@@ -116,6 +116,29 @@ MODE_CONFIG[MODES.BUILD] = {
   masterTitle: "反応式マスター!!",
 };
 
+/* 裏モードの解放条件：
+   STEP1・STEP2 の全4モードで S ランク以上（ベスト記録が S 基準タイム以内） */
+const BASE_MODES = [
+  MODES.FORMULA_BASIC,
+  MODES.FORMULA_CHALLENGE,
+  MODES.COEFF_BASIC,
+  MODES.COEFF_CHALLENGE,
+];
+const SECRET_MODES = [MODES.JUDGE, MODES.BUILD];
+
+function hasSGradeForMode(bestByMode, mode) {
+  const rec = bestByMode && bestByMode[mode];
+  if (!rec || typeof rec.sec !== "number" || !isFinite(rec.sec)) return false;
+  return rec.sec <= MODE_CONFIG[mode].grades.s;
+}
+
+function isSecretUnlocked(bestByMode) {
+  for (let i = 0; i < BASE_MODES.length; i++) {
+    if (!hasSGradeForMode(bestByMode, BASE_MODES[i])) return false;
+  }
+  return true;
+}
+
 function gradeFor(mode, sec) {
   const g = MODE_CONFIG[mode].grades;
   if (sec < g.ss) {
@@ -675,6 +698,10 @@ function HelpModal(props) {
             <li>・まちがえても続行できるけど、その分タイムがかかるよ。</li>
             <li>・結果画面の「復習」で、まちがえた問題だけやり直せる。</li>
             <li>・ベスト記録はこの端末に保存される。</li>
+            <li className="font-black text-amber-200/90">
+              ・STEP3・STEP4 は裏モード！ STEP1・STEP2 の4つすべてで
+              Sランク以上をとると解放される。
+            </li>
           </ul>
         </div>
       </div>
@@ -733,6 +760,17 @@ function ModeCard(props) {
 }
 
 function StartButton(props) {
+  // inert: 裏モードが未解放のあいだ、見た目はそのままでタップしても反応しない
+  if (props.inert) {
+    return (
+      <button
+        type="button"
+        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-3 text-sm font-black text-white"
+      >
+        {props.children}
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -928,6 +966,10 @@ export default function App() {
   }
 
   function startMode(nextMode) {
+    // 裏モードは解放されるまで反応しない
+    if (SECRET_MODES.indexOf(nextMode) >= 0 && !isSecretUnlocked(bestByMode)) {
+      return;
+    }
     startRun(nextMode, "main", buildQuestionsForMode(nextMode));
   }
 
@@ -954,6 +996,8 @@ export default function App() {
       if (missedRef.current[i]) missedQuestions.push(qs[i]);
     }
     let isNewBest = false;
+    const prevUnlocked = isSecretUnlocked(bestByMode);
+    let nowUnlocked = prevUnlocked;
     if (phase === "main") {
       const prev = bestByMode[mode];
       if (!prev || sec < prev.sec) {
@@ -967,6 +1011,7 @@ export default function App() {
         }
         nextMap[mode] = { sec: sec, at: Date.now() };
         setBestByMode(nextMap);
+        nowUnlocked = isSecretUnlocked(nextMap);
       }
     }
     setLastResult({
@@ -975,6 +1020,7 @@ export default function App() {
       sec: sec,
       missedQuestions: missedQuestions,
       isNewBest: isNewBest,
+      unlockedSecret: !prevUnlocked && nowUnlocked,
     });
     setOverlay(null);
     setScreen("result");
@@ -1872,6 +1918,17 @@ export default function App() {
               ★ ベスト記録を更新！
             </div>
           ) : null}
+          {lastResult.unlockedSecret ? (
+            <div className="mt-4 rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-violet-500/20 px-4 py-4 animate-popin">
+              <div className="text-xl font-black text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.5)]">
+                🎉 裏モード解放！！
+              </div>
+              <div className="mt-1.5 text-xs font-bold leading-relaxed text-white/80">
+                全モードSランク達成！ ホームの「○×ジャッジ」と「組み立てラボ」が
+                遊べるようになった！
+              </div>
+            </div>
+          ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
             まちがい：{wrongTaps} 回
           </div>
@@ -1948,6 +2005,7 @@ export default function App() {
   }
 
   function renderHome() {
+    const secretUnlocked = isSecretUnlocked(bestByMode);
     return (
       <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-8 sm:px-6">
         <div className="flex items-start justify-between gap-4">
@@ -2019,12 +2077,13 @@ export default function App() {
           </ModeCard>
 
           <ModeCard
-            step="STEP3"
+            step={secretUnlocked ? "裏モード" : "STEP3"}
             accent="amber"
             title="○×ジャッジ"
             detail="この反応式、あってる？ 瞬時に見きわめよう（20問）"
           >
             <StartButton
+              inert={!secretUnlocked}
               onClick={function () {
                 startMode(MODES.JUDGE);
               }}
@@ -2034,12 +2093,13 @@ export default function App() {
           </ModeCard>
 
           <ModeCard
-            step="STEP4"
+            step={secretUnlocked ? "裏モード" : "STEP4"}
             accent="rose"
             title="組み立てラボ"
             detail="実験の説明から反応式をまるごと組み立てる、最終ステージ（5問）"
           >
             <StartButton
+              inert={!secretUnlocked}
               onClick={function () {
                 startMode(MODES.BUILD);
               }}
