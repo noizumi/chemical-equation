@@ -1,0 +1,250 @@
+/**
+ * 出題データ
+ * - 先生が編集するのはこのファイルだけで OK
+ * - 化学式は ASCII 表記（H2O, Ca(OH)2 など）。画面表示時に添字へ変換される
+ * - 反応式は「中学範囲で頻出の化学反応式」資料から、イオン反応式
+ *   （電荷 ⁺/⁻ や e⁻ を含むもの）を除いて収録
+ * - 資料の「3Fe＋2O₂ → Fe₂O₃」は係数がつり合わないため、
+ *   正しい「3Fe＋2O₂ → Fe₃O₄（四酸化三鉄）」に修正して収録している
+ */
+
+/* ================= 物質データ =================
+ * f: 化学式 / name: 物質名
+ * q: 化学式マッチでの出題レベル
+ *    1 = きほん（中2でよく出る物質）
+ *    2 = チャレンジ（中3・発展の物質）
+ *    0 = 化学式マッチでは出題しない（反応式の表示・カードにのみ使用）
+ */
+export const SUBSTANCES = [
+  // 単体
+  { f: "H2", name: "水素", q: 1 },
+  { f: "O2", name: "酸素", q: 1 },
+  { f: "N2", name: "窒素", q: 1 },
+  { f: "Cl2", name: "塩素", q: 1 },
+  { f: "C", name: "炭素", q: 1 },
+  { f: "S", name: "硫黄", q: 1 },
+  { f: "Fe", name: "鉄", q: 1 },
+  { f: "Cu", name: "銅", q: 1 },
+  { f: "Mg", name: "マグネシウム", q: 1 },
+  { f: "Ag", name: "銀", q: 1 },
+  { f: "Zn", name: "亜鉛", q: 1 },
+  { f: "Al", name: "アルミニウム", q: 1 },
+  // 中2でよく出る化合物
+  { f: "H2O", name: "水", q: 1 },
+  { f: "CO2", name: "二酸化炭素", q: 1 },
+  { f: "NH3", name: "アンモニア", q: 1 },
+  { f: "CuO", name: "酸化銅", q: 1 },
+  { f: "MgO", name: "酸化マグネシウム", q: 1 },
+  { f: "Ag2O", name: "酸化銀", q: 1 },
+  { f: "FeS", name: "硫化鉄", q: 1 },
+  { f: "CuS", name: "硫化銅", q: 1 },
+  { f: "CuCl2", name: "塩化銅", q: 1 },
+  { f: "NaHCO3", name: "炭酸水素ナトリウム", q: 1 },
+  { f: "Na2CO3", name: "炭酸ナトリウム", q: 1 },
+  { f: "NaCl", name: "塩化ナトリウム", q: 1 },
+  // 中3・発展の物質
+  { f: "SO2", name: "二酸化硫黄", q: 2 },
+  { f: "H2S", name: "硫化水素", q: 2 },
+  { f: "H2O2", name: "過酸化水素", q: 2 },
+  { f: "H2CO3", name: "炭酸", q: 2 },
+  { f: "CH4", name: "メタン", q: 2 },
+  { f: "C2H5OH", name: "エタノール", q: 2 },
+  { f: "HCl", name: "塩化水素（塩酸）", q: 2 },
+  { f: "H2SO4", name: "硫酸", q: 2 },
+  { f: "CH3COOH", name: "酢酸", q: 2 },
+  { f: "NaOH", name: "水酸化ナトリウム", q: 2 },
+  { f: "KOH", name: "水酸化カリウム", q: 2 },
+  { f: "Ca(OH)2", name: "水酸化カルシウム", q: 2 },
+  { f: "Ba(OH)2", name: "水酸化バリウム", q: 2 },
+  { f: "CaCO3", name: "炭酸カルシウム", q: 2 },
+  { f: "K2CO3", name: "炭酸カリウム", q: 2 },
+  { f: "CaO", name: "酸化カルシウム", q: 2 },
+  { f: "MgCl2", name: "塩化マグネシウム", q: 2 },
+  { f: "FeCl2", name: "塩化鉄", q: 2 },
+  { f: "ZnCl2", name: "塩化亜鉛", q: 2 },
+  { f: "CaCl2", name: "塩化カルシウム", q: 2 },
+  { f: "AlCl3", name: "塩化アルミニウム", q: 2 },
+  { f: "NH4Cl", name: "塩化アンモニウム", q: 2 },
+  { f: "BaCl2", name: "塩化バリウム", q: 2 },
+  { f: "BaSO4", name: "硫酸バリウム", q: 2 },
+  { f: "ZnSO4", name: "硫酸亜鉛", q: 2 },
+  { f: "FeSO4", name: "硫酸鉄", q: 2 },
+  { f: "CaSO4", name: "硫酸カルシウム", q: 2 },
+  // 反応式の表示にのみ使用（化学式マッチでは出題しない）
+  { f: "Fe3O4", name: "四酸化三鉄", q: 0 },
+  { f: "C6H12O6", name: "ブドウ糖", q: 0 },
+  { f: "AgNO3", name: "硝酸銀", q: 0 },
+  { f: "AgCl", name: "塩化銀", q: 0 },
+  { f: "NaNO3", name: "硝酸ナトリウム", q: 0 },
+  { f: "CH3COONa", name: "酢酸ナトリウム", q: 0 },
+];
+
+var SUBSTANCE_BY_F = {};
+for (var si = 0; si < SUBSTANCES.length; si++) {
+  SUBSTANCE_BY_F[SUBSTANCES[si].f] = SUBSTANCES[si];
+}
+
+export function substanceName(formula) {
+  var s = SUBSTANCE_BY_F[formula];
+  return s ? s.name : formula;
+}
+
+export function substanceByFormula(formula) {
+  var s = SUBSTANCE_BY_F[formula];
+  return s ? s : null;
+}
+
+/* ================= 反応式データ =================
+ * lv: 1 = きほん（中2の化学変化）/ 2 = チャレンジ（気体の発生・中和・発展）
+ * cat: 分類ラベル
+ * desc: 実験・操作の説明文（組み立てモードの問題文にもなる）
+ * left / right: [係数, 化学式] の配列
+ * jd: ○×ジャッジに出題する
+ * bd: 組み立てモードに出題する
+ */
+function eq(id, lv, cat, desc, left, right, flags) {
+  function side(arr) {
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      out.push({ coeff: arr[i][0], formula: arr[i][1] });
+    }
+    return out;
+  }
+  var f = flags || {};
+  return {
+    id: id,
+    lv: lv,
+    cat: cat,
+    desc: desc,
+    left: side(left),
+    right: side(right),
+    jd: !!f.jd,
+    bd: !!f.bd,
+  };
+}
+
+export const EQUATIONS = [
+  /* ---------- きほん（中2：化合・燃焼・分解・還元） ---------- */
+  eq("fe_s", 1, "化合", "鉄と硫黄の混合物を加熱する",
+    [[1, "Fe"], [1, "S"]], [[1, "FeS"]], { jd: true, bd: true }),
+  eq("cu_s", 1, "化合", "銅と硫黄を化合させる",
+    [[1, "Cu"], [1, "S"]], [[1, "CuS"]], { jd: true }),
+  eq("cu_cl2", 1, "化合", "熱した銅を塩素の中に入れる",
+    [[1, "Cu"], [1, "Cl2"]], [[1, "CuCl2"]], { jd: true }),
+  eq("c_o2", 1, "燃焼", "炭素（黒鉛）を燃焼させる",
+    [[1, "C"], [1, "O2"]], [[1, "CO2"]], { jd: true, bd: true }),
+  eq("s_o2", 1, "燃焼", "硫黄を燃焼させる",
+    [[1, "S"], [1, "O2"]], [[1, "SO2"]], { jd: true }),
+  eq("cu_o2", 1, "酸化", "銅を空気中で加熱する",
+    [[2, "Cu"], [1, "O2"]], [[2, "CuO"]], { jd: true, bd: true }),
+  eq("mg_o2", 1, "燃焼", "マグネシウムを空気中で燃焼させる",
+    [[2, "Mg"], [1, "O2"]], [[2, "MgO"]], { jd: true, bd: true }),
+  eq("h2_o2", 1, "燃焼", "水素を燃焼させる",
+    [[2, "H2"], [1, "O2"]], [[2, "H2O"]], { jd: true, bd: true }),
+  eq("fe_o2", 1, "燃焼", "スチールウール（鉄）を燃焼させる",
+    [[3, "Fe"], [2, "O2"]], [[1, "Fe3O4"]], { jd: true }),
+  eq("h2o_elec", 1, "電気分解", "水を電気分解する",
+    [[2, "H2O"]], [[2, "H2"], [1, "O2"]], { jd: true, bd: true }),
+  eq("hcl_elec", 1, "電気分解", "うすい塩酸を電気分解する",
+    [[2, "HCl"]], [[1, "H2"], [1, "Cl2"]], { jd: true }),
+  eq("cucl2_elec", 1, "電気分解", "塩化銅水溶液を電気分解する",
+    [[1, "CuCl2"]], [[1, "Cu"], [1, "Cl2"]], { jd: true, bd: true }),
+  eq("ag2o_dec", 1, "分解", "酸化銀を加熱して分解する",
+    [[2, "Ag2O"]], [[4, "Ag"], [1, "O2"]], { jd: true, bd: true }),
+  eq("nahco3_dec", 1, "分解", "炭酸水素ナトリウムを加熱して分解する",
+    [[2, "NaHCO3"]], [[1, "Na2CO3"], [1, "H2O"], [1, "CO2"]], { jd: true, bd: true }),
+  eq("h2o2_dec", 1, "分解", "うすい過酸化水素水（オキシドール）から酸素が発生する",
+    [[2, "H2O2"]], [[2, "H2O"], [1, "O2"]], { jd: true }),
+  eq("cuo_h2", 1, "還元", "酸化銅を水素の中で加熱して還元する",
+    [[1, "CuO"], [1, "H2"]], [[1, "Cu"], [1, "H2O"]], { jd: true, bd: true }),
+  eq("cuo_c", 1, "還元", "酸化銅と炭素の粉末を混ぜて加熱する",
+    [[2, "CuO"], [1, "C"]], [[2, "Cu"], [1, "CO2"]], { jd: true, bd: true }),
+
+  /* ---------- チャレンジ（気体の発生・中和・発展） ---------- */
+  eq("co2_h2o", 2, "化合", "二酸化炭素が水にとけて炭酸ができる",
+    [[1, "CO2"], [1, "H2O"]], [[1, "H2CO3"]]),
+  eq("n2_h2", 2, "化合", "窒素と水素からアンモニアを合成する",
+    [[1, "N2"], [3, "H2"]], [[2, "NH3"]], { jd: true }),
+  eq("ch4_burn", 2, "燃焼", "メタンを完全燃焼させる",
+    [[1, "CH4"], [2, "O2"]], [[1, "CO2"], [2, "H2O"]], { jd: true }),
+  eq("etoh_burn", 2, "燃焼", "エタノールを燃焼させる",
+    [[1, "C2H5OH"], [3, "O2"]], [[2, "CO2"], [3, "H2O"]]),
+  eq("glucose_burn", 2, "燃焼", "ブドウ糖が完全に酸化される（呼吸のもとになる反応）",
+    [[1, "C6H12O6"], [6, "O2"]], [[6, "CO2"], [6, "H2O"]]),
+  eq("mg_hcl", 2, "気体の発生", "マグネシウムにうすい塩酸を加える",
+    [[1, "Mg"], [2, "HCl"]], [[1, "MgCl2"], [1, "H2"]], { jd: true, bd: true }),
+  eq("fe_hcl", 2, "気体の発生", "鉄にうすい塩酸を加える",
+    [[1, "Fe"], [2, "HCl"]], [[1, "FeCl2"], [1, "H2"]], { jd: true }),
+  eq("zn_hcl", 2, "気体の発生", "亜鉛にうすい塩酸を加える",
+    [[1, "Zn"], [2, "HCl"]], [[1, "ZnCl2"], [1, "H2"]], { jd: true }),
+  eq("al_hcl", 2, "気体の発生", "アルミニウムにうすい塩酸を加える",
+    [[2, "Al"], [6, "HCl"]], [[2, "AlCl3"], [3, "H2"]]),
+  eq("zn_h2so4", 2, "気体の発生", "亜鉛にうすい硫酸を加える",
+    [[1, "Zn"], [1, "H2SO4"]], [[1, "ZnSO4"], [1, "H2"]], { jd: true }),
+  eq("fes_hcl", 2, "気体の発生", "硫化鉄にうすい塩酸を加える",
+    [[1, "FeS"], [2, "HCl"]], [[1, "FeCl2"], [1, "H2S"]]),
+  eq("fes_h2so4", 2, "気体の発生", "硫化鉄にうすい硫酸を加える",
+    [[1, "FeS"], [1, "H2SO4"]], [[1, "FeSO4"], [1, "H2S"]]),
+  eq("caco3_hcl", 2, "気体の発生", "石灰石（炭酸カルシウム）にうすい塩酸を加える",
+    [[1, "CaCO3"], [2, "HCl"]], [[1, "CaCl2"], [1, "H2O"], [1, "CO2"]], { jd: true }),
+  eq("nahco3_hcl", 2, "気体の発生", "炭酸水素ナトリウムにうすい塩酸を加える",
+    [[1, "NaHCO3"], [1, "HCl"]], [[1, "NaCl"], [1, "H2O"], [1, "CO2"]], { jd: true }),
+  eq("nh3_gen", 2, "気体の発生", "水酸化カルシウムと塩化アンモニウムを混ぜて加熱する",
+    [[1, "Ca(OH)2"], [2, "NH4Cl"]], [[1, "CaCl2"], [2, "NH3"], [2, "H2O"]]),
+  eq("caco3_dec", 2, "分解", "石灰石（炭酸カルシウム）を強く熱する",
+    [[1, "CaCO3"]], [[1, "CaO"], [1, "CO2"]]),
+  eq("cao_h2o", 2, "化合", "酸化カルシウム（生石灰）に水を加える",
+    [[1, "CaO"], [1, "H2O"]], [[1, "Ca(OH)2"]]),
+  eq("limewater", 2, "沈殿", "石灰水に二酸化炭素を通す（白くにごる）",
+    [[1, "Ca(OH)2"], [1, "CO2"]], [[1, "CaCO3"], [1, "H2O"]], { jd: true, bd: true }),
+  eq("hcl_naoh", 2, "中和", "うすい塩酸に水酸化ナトリウム水溶液を加える",
+    [[1, "HCl"], [1, "NaOH"]], [[1, "NaCl"], [1, "H2O"]], { jd: true }),
+  eq("h2so4_baoh2", 2, "中和", "うすい硫酸に水酸化バリウム水溶液を加える（白い沈殿）",
+    [[1, "H2SO4"], [1, "Ba(OH)2"]], [[1, "BaSO4"], [2, "H2O"]], { jd: true }),
+  eq("caoh2_hcl", 2, "中和", "石灰水（水酸化カルシウム）にうすい塩酸を加える",
+    [[1, "Ca(OH)2"], [2, "HCl"]], [[1, "CaCl2"], [2, "H2O"]]),
+  eq("caoh2_h2so4", 2, "中和", "水酸化カルシウムにうすい硫酸を加える",
+    [[1, "Ca(OH)2"], [1, "H2SO4"]], [[1, "CaSO4"], [2, "H2O"]]),
+  eq("koh_co2", 2, "中和", "水酸化カリウム水溶液に二酸化炭素を通す",
+    [[2, "KOH"], [1, "CO2"]], [[1, "K2CO3"], [1, "H2O"]]),
+  eq("acoh_naoh", 2, "中和", "酢酸に水酸化ナトリウム水溶液を加える",
+    [[1, "CH3COOH"], [1, "NaOH"]], [[1, "CH3COONa"], [1, "H2O"]]),
+  eq("cao_hcl", 2, "中和", "酸化カルシウムにうすい塩酸を加える",
+    [[1, "CaO"], [2, "HCl"]], [[1, "CaCl2"], [1, "H2O"]]),
+  eq("bacl2_h2so4", 2, "沈殿", "塩化バリウム水溶液にうすい硫酸を加える（白い沈殿）",
+    [[1, "BaCl2"], [1, "H2SO4"]], [[1, "BaSO4"], [2, "HCl"]]),
+  eq("nacl_agno3", 2, "沈殿", "食塩水に硝酸銀水溶液を加える（白い沈殿）",
+    [[1, "NaCl"], [1, "AgNO3"]], [[1, "AgCl"], [1, "NaNO3"]]),
+];
+
+export function equationsByLevel(lv) {
+  var out = [];
+  for (var i = 0; i < EQUATIONS.length; i++) {
+    if (EQUATIONS[i].lv === lv) out.push(EQUATIONS[i]);
+  }
+  return out;
+}
+
+export function judgeEquations() {
+  var out = [];
+  for (var i = 0; i < EQUATIONS.length; i++) {
+    if (EQUATIONS[i].jd) out.push(EQUATIONS[i]);
+  }
+  return out;
+}
+
+export function buildEquations() {
+  var out = [];
+  for (var i = 0; i < EQUATIONS.length; i++) {
+    if (EQUATIONS[i].bd) out.push(EQUATIONS[i]);
+  }
+  return out;
+}
+
+export function quizSubstances(level) {
+  var out = [];
+  for (var i = 0; i < SUBSTANCES.length; i++) {
+    if (SUBSTANCES[i].q === level) out.push(SUBSTANCES[i]);
+  }
+  return out;
+}
