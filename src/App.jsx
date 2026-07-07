@@ -209,6 +209,112 @@ function writeBestRecord(mode, sec) {
   }
 }
 
+/* ================= 効果音（WebAudio・設定は端末に保存） ================= */
+
+var SOUND = { on: true };
+var audioCtxHolder = { ctx: null };
+
+function readSoundPref() {
+  try {
+    if (typeof window === "undefined") return true;
+    const ls = window.localStorage;
+    if (!ls) return true;
+    const raw = ls.getItem("chemeq_sound_v1");
+    return raw === null ? true : raw === "on";
+  } catch (e) {
+    return true;
+  }
+}
+
+function writeSoundPref(on) {
+  try {
+    if (typeof window === "undefined") return;
+    const ls = window.localStorage;
+    if (!ls) return;
+    ls.setItem("chemeq_sound_v1", on ? "on" : "off");
+  } catch (e) {
+    // ignore
+  }
+}
+
+function ensureAudioCtx() {
+  if (audioCtxHolder.ctx) return audioCtxHolder.ctx;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtxHolder.ctx = new AC();
+  } catch (e) {
+    audioCtxHolder.ctx = null;
+  }
+  return audioCtxHolder.ctx;
+}
+
+/** iOS は ユーザー操作の中で resume しないと音が出ない */
+function resumeAudio() {
+  if (!SOUND.on) return;
+  const ctx = ensureAudioCtx();
+  if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
+    try {
+      ctx.resume();
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+function beep(freq, durMs, delayMs, type, vol) {
+  if (!SOUND.on) return;
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  try {
+    const t0 = ctx.currentTime + (delayMs || 0) / 1000;
+    const dur = durMs / 1000;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, t0);
+    const v = typeof vol === "number" ? vol : 0.1;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.linearRampToValueAtTime(v, t0 + 0.012);
+    gain.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function playCorrect() {
+  beep(880, 90, 0);
+  beep(1318.5, 150, 85);
+}
+function playWrong() {
+  beep(165, 160, 0, "square", 0.055);
+}
+function playInfo() {
+  beep(330, 120, 0, "sine", 0.08);
+}
+function playTick() {
+  beep(660, 70, 0, "sine", 0.09);
+}
+function playStart() {
+  beep(880, 200, 0);
+}
+function playFinish() {
+  beep(659.3, 110, 0);
+  beep(880, 110, 120);
+  beep(1318.5, 260, 240);
+}
+function playUnlock(baseDelayMs) {
+  const d = baseDelayMs || 0;
+  beep(784, 100, d);
+  beep(987.8, 100, d + 110);
+  beep(1174.7, 100, d + 220);
+  beep(1568, 320, d + 330);
+}
+
 /* ================= 化学式の表示 ================= */
 
 function formulaSegments(formula) {
@@ -612,6 +718,7 @@ function Overlay(props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-6 animate-fadein"
       role="status"
       aria-live="polite"
+      onClick={props.onSkip}
     >
       <div
         className={
@@ -627,6 +734,11 @@ function Overlay(props) {
             <div className="mt-2 text-sm font-bold text-white/75">{props.sub}</div>
           ) : null}
           {props.children ? <div className="mt-3">{props.children}</div> : null}
+          {props.onSkip ? (
+            <div className="mt-4 text-[10px] font-bold text-white/40">
+              タップですすむ
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -698,6 +810,9 @@ function HelpModal(props) {
             <li>・まちがえても続行できるけど、その分タイムがかかるよ。</li>
             <li>・結果画面の「復習」で、まちがえた問題だけやり直せる。</li>
             <li>・ベスト記録はこの端末に保存される。</li>
+            <li>・連続で正解するとコンボ🔥がつながる。ノーミスをめざそう！</li>
+            <li>・正解の表示はタップで飛ばせる（タイム短縮！）。</li>
+            <li>・効果音はホーム右上の🔊ボタンで ON/OFF。</li>
             <li className="font-black text-amber-200/90">
               ・STEP3・STEP4 は裏モード！ STEP1・STEP2 の4つすべてで
               Sランク以上をとると解放される。
@@ -838,6 +953,17 @@ export default function App() {
   const missedRef = useRef({});
   const [wrongTaps, setWrongTaps] = useState(0);
 
+  // 連続正解コンボ
+  const streakRef = useRef(0);
+  const maxStreakRef = useRef(0);
+  const [streak, setStreak] = useState(0);
+
+  const [soundOn, setSoundOn] = useState(function () {
+    const v = readSoundPref();
+    SOUND.on = v;
+    return v;
+  });
+
   const [overlay, setOverlay] = useState(null);
   const advanceTimerRef = useRef(null);
   const flashTimerRef = useRef(null);
@@ -913,6 +1039,7 @@ export default function App() {
     function () {
       if (screen !== "countdown") return undefined;
       if (countdownStep < 3) {
+        playTick();
         const t = setTimeout(function () {
           setCountdownStep(countdownStep + 1);
         }, 650);
@@ -920,6 +1047,7 @@ export default function App() {
           clearTimeout(t);
         };
       }
+      playStart();
       const t2 = setTimeout(function () {
         startMsRef.current = Date.now();
         setElapsed(0);
@@ -994,7 +1122,11 @@ export default function App() {
     penaltyRef.current = 0;
     setPenaltySec(0);
     setWrongTaps(0);
+    streakRef.current = 0;
+    maxStreakRef.current = 0;
+    setStreak(0);
     setToast(null);
+    resumeAudio();
     resetQuestionState(qs[0]);
     setCountdownStep(0);
     setScreen("countdown");
@@ -1010,7 +1142,12 @@ export default function App() {
 
   function startReview() {
     if (!lastResult || !lastResult.missedQuestions.length) return;
-    startRun(lastResult.mode, "review", shuffle(lastResult.missedQuestions));
+    // 化学式マッチは選択肢の並びも変えて、位置おぼえを防ぐ
+    const qs = lastResult.missedQuestions.map(function (q) {
+      if (q.kind !== "formula") return q;
+      return { kind: q.kind, sub: q.sub, dir: q.dir, options: shuffle(q.options) };
+    });
+    startRun(lastResult.mode, "review", shuffle(qs));
   }
 
   function markMissed() {
@@ -1018,6 +1155,24 @@ export default function App() {
     setWrongTaps(function (w) {
       return w + 1;
     });
+    streakRef.current = 0;
+    setStreak(0);
+    playWrong();
+  }
+
+  /** 1問解けた（正解イベント）。ノーミスの問題だけコンボが続く */
+  function onSolved() {
+    playCorrect();
+    if (missedRef.current[qIndexRef.current]) {
+      streakRef.current = 0;
+      setStreak(0);
+      return;
+    }
+    streakRef.current += 1;
+    if (streakRef.current > maxStreakRef.current) {
+      maxStreakRef.current = streakRef.current;
+    }
+    setStreak(streakRef.current);
   }
 
   function finishRun() {
@@ -1049,14 +1204,18 @@ export default function App() {
         nowUnlocked = isSecretUnlocked(nextMap);
       }
     }
+    const unlockedSecret = !prevUnlocked && nowUnlocked;
     setLastResult({
       mode: mode,
       phase: phase,
       sec: sec,
       missedQuestions: missedQuestions,
       isNewBest: isNewBest,
-      unlockedSecret: !prevUnlocked && nowUnlocked,
+      unlockedSecret: unlockedSecret,
+      maxStreak: maxStreakRef.current,
     });
+    playFinish();
+    if (unlockedSecret) playUnlock(600);
     setOverlay(null);
     setScreen("result");
   }
@@ -1087,6 +1246,17 @@ export default function App() {
     setScreen("home");
   }
 
+  function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    SOUND.on = next;
+    writeSoundPref(next);
+    if (next) {
+      resumeAudio();
+      playTick();
+    }
+  }
+
   function showToast(text) {
     setToast({ text: text, key: Date.now() });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -1105,6 +1275,7 @@ export default function App() {
     if (disabledOpts[idx]) return;
     const opt = q.options[idx];
     if (opt.f === q.sub.f) {
+      onSolved();
       setOptFlash({ idx: idx, kind: "correct" });
       scheduleAdvance(300);
     } else {
@@ -1225,6 +1396,7 @@ export default function App() {
     if (!allCoeffFilled(q)) return;
     const res = checkBalance(q.eq, coeffL, coeffR);
     if (res.balanced && res.simplest) {
+      onSolved();
       setCheckLock(true);
       setOverlay({
         kind: "correct",
@@ -1236,6 +1408,7 @@ export default function App() {
       });
       scheduleAdvance(1400);
     } else if (res.balanced && !res.simplest) {
+      playInfo();
       showToast("つり合っているけど…もっと簡単な整数比にできるよ！");
       setShakeKey(function (k) {
         return k + 1;
@@ -1379,6 +1552,7 @@ export default function App() {
     }
 
     if (ok) {
+      onSolved();
       setCheckLock(true);
       setOverlay({
         kind: "correct",
@@ -1415,6 +1589,7 @@ export default function App() {
     setCheckLock(true);
     const right = saidCorrect === q.correct;
     if (right) {
+      onSolved();
       if (q.correct) {
         setOverlay({ kind: "correct", title: "せいかい！", sub: "つり合っている！" });
         scheduleAdvance(450);
@@ -1459,6 +1634,11 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {streak >= 2 ? (
+            <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-2.5 py-1 text-xs font-black text-orange-200">
+              🔥{streak}
+            </span>
+          ) : null}
           {penaltySec > 0 ? (
             <span className="rounded-full border border-rose-400/40 bg-rose-500/15 px-2.5 py-1 text-xs font-black text-rose-200">
               ＋{penaltySec}s
@@ -1918,10 +2098,22 @@ export default function App() {
     );
   }
 
+  function nextRankInfo(mode, sec) {
+    const g = MODE_CONFIG[mode].grades;
+    const grade = gradeFor(mode, sec).grade;
+    if (grade === "SS") return null;
+    if (grade === "S") return { rank: "SS", limit: g.ss, strict: true };
+    if (grade === "A") return { rank: "S", limit: g.s, strict: false };
+    if (grade === "B") return { rank: "A", limit: g.a, strict: false };
+    return { rank: "B", limit: g.b, strict: false };
+  }
+
   function renderResult() {
     if (!lastResult) return null;
     const gr = gradeFor(lastResult.mode, lastResult.sec);
     const missed = lastResult.missedQuestions;
+    const next = lastResult.phase === "main" ? nextRankInfo(lastResult.mode, lastResult.sec) : null;
+    const noMiss = wrongTaps === 0;
     const gradeColor =
       gr.grade === "SS"
         ? "text-amber-300 [text-shadow:0_0_18px_rgba(251,191,36,0.6)]"
@@ -1948,9 +2140,28 @@ export default function App() {
           <div className="mx-auto mt-1 max-w-sm text-sm text-white/65">
             {gr.comment}
           </div>
-          {lastResult.isNewBest ? (
-            <div className="mt-3 inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-3 py-1 text-xs font-black text-amber-200">
-              ★ ベスト記録を更新！
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {lastResult.isNewBest ? (
+              <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-3 py-1 text-xs font-black text-amber-200">
+                ★ ベスト記録を更新！
+              </span>
+            ) : null}
+            {noMiss ? (
+              <span className="inline-flex items-center rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-xs font-black text-emerald-200">
+                ✨ ノーミス達成！
+              </span>
+            ) : null}
+          </div>
+          {next ? (
+            <div className="mt-3 text-xs font-bold text-white/60">
+              つぎは
+              <span className="mx-1 text-sm font-black text-white">
+                {next.rank}
+              </span>
+              ランク：{next.limit}秒{next.strict ? "未満" : "以内"}
+              <span className="ml-1 text-white/45">
+                （あと {formatSeconds(Math.max(0, lastResult.sec - next.limit))} 秒ちぢめよう）
+              </span>
             </div>
           ) : null}
           {lastResult.unlockedSecret ? (
@@ -1965,7 +2176,8 @@ export default function App() {
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            まちがい：{wrongTaps} 回
+            まちがい：{wrongTaps} 回 ／ 最大コンボ：
+            {coalesce(lastResult.maxStreak, 0)}
           </div>
         </div>
 
@@ -2020,15 +2232,30 @@ export default function App() {
               中2理科「化学変化」 × タイムアタック
             </div>
           </div>
-          <button
-            type="button"
-            onClick={function () {
-              setShowHelp(true);
-            }}
-            className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white/80 hover:bg-white/10"
-          >
-            あそび方
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleSound}
+              aria-label={soundOn ? "効果音をオフにする" : "効果音をオンにする"}
+              className={
+                "rounded-2xl border px-3.5 py-3 text-base font-black transition " +
+                (soundOn
+                  ? "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                  : "border-white/10 bg-white/5 text-white/35 hover:bg-white/10")
+              }
+            >
+              {soundOn ? "🔊" : "🔇"}
+            </button>
+            <button
+              type="button"
+              onClick={function () {
+                setShowHelp(true);
+              }}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white/80 hover:bg-white/10"
+            >
+              あそび方
+            </button>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 md:grid-cols-2">
@@ -2156,7 +2383,12 @@ export default function App() {
       </div>
 
       {overlay ? (
-        <Overlay kind={overlay.kind} title={overlay.title} sub={overlay.sub}>
+        <Overlay
+          kind={overlay.kind}
+          title={overlay.title}
+          sub={overlay.sub}
+          onSkip={goNext}
+        >
           {overlay.node}
         </Overlay>
       ) : null}
