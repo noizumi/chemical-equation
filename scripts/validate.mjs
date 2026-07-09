@@ -60,13 +60,13 @@ const chalEq = equationsByLevel(2).length;
 const jd = judgeEquations().length;
 const bd = buildEquations().length;
 
-console.log("物質: きほん " + basicSub + " / チャレンジ " + chalSub);
-console.log("反応式: きほん " + basicEq + " / チャレンジ " + chalEq);
+console.log("物質: 基本 " + basicSub + " / チャレンジ " + chalSub);
+console.log("反応式: 基本 " + basicEq + " / チャレンジ " + chalEq);
 console.log("○×ジャッジ対象: " + jd + " / 組み立て対象: " + bd);
 
-if (basicSub < 20) fail("化学式マッチ（きほん）の物質が 20 未満");
+if (basicSub < 20) fail("化学式マッチ（基本）の物質が 20 未満");
 if (chalSub < 20) fail("化学式マッチ（チャレンジ）の物質が 20 未満");
-if (basicEq < 10) fail("係数バランス（きほん）の反応式が 10 未満");
+if (basicEq < 10) fail("係数バランス（基本）の反応式が 10 未満");
 if (chalEq < 10) fail("係数バランス（チャレンジ）の反応式が 10 未満");
 if (jd < 20) fail("○×ジャッジの反応式が 20 未満");
 if (bd < 5) fail("組み立ての反応式が 5 未満");

@@ -76,7 +76,7 @@ const MODE_CONFIG = {};
 /* グレード基準タイム（秒）
    正解演出中はタイマーが止まるため、純粋な解答時間で評価される */
 MODE_CONFIG[MODES.FORMULA_BASIC] = {
-  title: "化学式マッチ（きほん）",
+  title: "化学式マッチ（基本）",
   shortLabel: "化学式・き",
   questions: 20,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
@@ -90,7 +90,7 @@ MODE_CONFIG[MODES.FORMULA_CHALLENGE] = {
   masterTitle: "化学式マスター!!",
 };
 MODE_CONFIG[MODES.COEFF_BASIC] = {
-  title: "係数バランス（きほん）",
+  title: "係数バランス（基本）",
   shortLabel: "係数・き",
   questions: 10,
   grades: { ss: 50, s: 85, a: 135, b: 200 },
@@ -155,7 +155,7 @@ function gradeFor(mode, sec) {
     return {
       grade: "S",
       title: MODE_CONFIG[mode].masterTitle,
-      comment: "すごい！速さも正確さもバッチリ。マスターの称号を授けます！",
+      comment: "速さも正確さも申し分なし。マスターの称号を授けます。",
     };
   }
   if (sec <= g.a) {
@@ -169,13 +169,13 @@ function gradeFor(mode, sec) {
     return {
       grade: "B",
       title: "順調！",
-      comment: "まちがえた問題を復習すると、タイムがぐっと縮みます。",
+      comment: "間違えた問題を復習すると、タイムは大きく縮みます。",
     };
   }
   return {
     grade: "C",
     title: "これから伸びる",
-    comment: "あせらず1問ずつ。復習モードで確実にレベルアップしよう！",
+    comment: "焦らず1問ずつ。復習モードで確実にレベルアップを。",
   };
 }
 
@@ -426,7 +426,7 @@ function AtomHintPanel(props) {
   return (
     <div className="mx-auto mt-4 w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-3 animate-fadein">
       <div className="mb-2 text-center text-[11px] font-bold text-white/60">
-        原子の数をチェック（左辺 : 右辺）
+        原子数チェック（左辺 : 右辺）
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {els.map(function (el) {
@@ -511,7 +511,7 @@ function makeFormulaQuestions(level) {
 
 /**
  * 係数バランスの出題
- * - きほん（level 1）: 空欄は1カ所だけ。残りの係数は印字済み（中2の式から出題）
+ * - 基本（level 1）: 空欄は1カ所だけ。残りの係数は印字済み（中2の式から出題）
  * - チャレンジ（level 2）: すべての係数を入力（全反応式から出題）
  * givenL / givenR: 印字済みの係数（null の場所が空欄）
  */
@@ -773,7 +773,7 @@ function Overlay(props) {
           ) : null}
           {props.children ? <div className="mt-3">{props.children}</div> : null}
           <div className="mt-4 text-[10px] font-bold text-white/40">
-            ⏸ タイマーはとまっているよ
+            ⏸ タイマー停止中
           </div>
         </div>
       </div>
@@ -787,7 +787,7 @@ function HelpModal(props) {
       className="fixed inset-0 z-[60] flex items-center justify-center p-5 animate-fadein"
       role="dialog"
       aria-modal="true"
-      aria-label="あそび方"
+      aria-label="遊び方"
       onClick={props.onClose}
     >
       <div className="absolute inset-0 bg-black/60" aria-hidden="true" />
@@ -799,7 +799,7 @@ function HelpModal(props) {
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-sm font-semibold text-white/70">あそび方</div>
+            <div className="text-sm font-semibold text-white/70">遊び方</div>
             <div className="text-lg font-bold tracking-tight text-white">
               化学反応式マスター
             </div>
@@ -809,7 +809,7 @@ function HelpModal(props) {
             onClick={props.onClose}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10"
           >
-            とじる
+            閉じる
           </button>
         </div>
 
@@ -817,45 +817,43 @@ function HelpModal(props) {
           <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-3">
             <div className="font-bold text-cyan-200">STEP1 化学式マッチ</div>
             <div className="mt-1">
-              物質名と化学式を対応づけよう。正しい選択肢をタップ！
+              物質名と化学式を対応づける。正しい選択肢をタップ。
             </div>
           </div>
           <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-3">
             <div className="font-bold text-violet-200">STEP2 係数バランス</div>
             <div className="mt-1">
-              ▢に数字を入れて、左右の原子の数をそろえよう。
-              <span className="font-bold">きほんは空欄が1カ所だけ</span>
-              （ほかの係数は印字済み）。チャレンジは全部の係数を自分で入力！
-              係数は<span className="font-bold">最も簡単な整数比</span>で。
-              ふつう「1」は書かないけど、このゲームでは 1 も入力してね。
+              ▢に数字を入れて左右の原子数をそろえる。
+              <span className="font-bold">基本は空欄1カ所</span>
+              （他の係数は印字済み）、チャレンジは全係数を入力。
+              係数は<span className="font-bold">最も簡単な整数比</span>で、
+              通常は書かない「1」もこのゲームでは入力する。
             </div>
           </div>
           <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
             <div className="font-bold text-amber-200">STEP3 ○×ジャッジ</div>
             <div className="mt-1">
-              表示された反応式がつり合っていれば○、まちがっていれば×を瞬時に判定！
-              ミスすると＋5秒のペナルティ。
+              反応式がつり合っていれば○、誤りなら×を瞬時に判定。
+              ミスは＋5秒のペナルティ。
             </div>
           </div>
           <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
             <div className="font-bold text-rose-200">STEP4 組み立てラボ</div>
             <div className="mt-1">
-              実験の説明文を読んで、カードから物質を選び、係数も入れて反応式を完成させよう。
+              実験の説明文をもとに、物質カードと係数で反応式を完成させる。
             </div>
           </div>
           <ul className="space-y-1 pl-1 text-xs text-white/65">
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
-            <li>・まちがえても続行できるけど、その分タイムがかかるよ。</li>
-            <li>・結果画面の「復習」で、まちがえた問題だけやり直せる。</li>
+            <li>・ミスしても続行できるが、その分タイムを消費する。</li>
+            <li>・結果画面の「復習」で、間違えた問題だけやり直せる。</li>
             <li>・ベスト記録はこの端末に保存される。</li>
-            <li>・連続で正解するとコンボ🔥がつながる。ノーミスをめざそう！</li>
-            <li>
-              ・正解の表示中はタイマーが止まる。あせらず式を確認しよう！
-            </li>
-            <li>・効果音はホーム右上のボタンで ON にできる（最初は OFF）。</li>
+            <li>・連続正解でコンボ🔥が伸びる。ノーミスを狙おう。</li>
+            <li>・正解表示中はタイマーが停止。落ち着いて式を確認できる。</li>
+            <li>・効果音はホーム右上のボタンで ON にできる（初期設定は OFF）。</li>
             <li className="font-bold text-amber-200/90">
-              ・STEP3・STEP4 は裏モード！ STEP1・STEP2 の4つすべてで
-              Sランク以上をとると解放される。
+              ・STEP3・STEP4 は裏モード。STEP1・STEP2 の全4モードで
+              Sランク以上をとると解放。
             </li>
           </ul>
         </div>
@@ -868,54 +866,87 @@ function HelpModal(props) {
 
 const ACCENT_STYLES = {
   cyan: {
-    card: "border-cyan-400/25 bg-cyan-500/10",
+    card: "border-cyan-400/25 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-transparent",
     badge: "bg-cyan-400/20 text-cyan-100 border-cyan-300/30",
+    btn: "border-cyan-300/25 bg-cyan-400/10",
+    btnHover: " hover:bg-cyan-400/20",
   },
   violet: {
-    card: "border-violet-400/25 bg-violet-500/10",
+    card: "border-violet-400/25 bg-gradient-to-br from-violet-500/15 via-violet-500/5 to-transparent",
     badge: "bg-violet-400/20 text-violet-100 border-violet-300/30",
+    btn: "border-violet-300/25 bg-violet-400/10",
+    btnHover: " hover:bg-violet-400/20",
   },
   amber: {
-    card: "border-amber-400/25 bg-amber-500/10",
+    card: "border-amber-400/25 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent",
     badge: "bg-amber-400/20 text-amber-100 border-amber-300/30",
+    btn: "border-amber-300/25 bg-amber-400/10",
+    btnHover: " hover:bg-amber-400/20",
   },
   rose: {
-    card: "border-rose-400/25 bg-rose-500/10",
+    card: "border-rose-400/25 bg-gradient-to-br from-rose-500/15 via-rose-500/5 to-transparent",
     badge: "bg-rose-400/20 text-rose-100 border-rose-300/30",
+    btn: "border-rose-300/25 bg-rose-400/10",
+    btnHover: " hover:bg-rose-400/20",
   },
 };
 
+function LogoMark() {
+  // ファビコンと同じ「分子 → 分子」のマーク
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      className="h-11 w-11 shrink-0 rounded-2xl shadow-lg shadow-sky-500/10 sm:h-12 sm:w-12"
+      aria-hidden="true"
+    >
+      <rect width="100" height="100" rx="24" fill="#0b1526" />
+      <circle cx="26" cy="36" r="12" fill="#38bdf8" />
+      <circle cx="42" cy="45" r="8" fill="#7dd3fc" />
+      <circle cx="29" cy="55" r="8" fill="#7dd3fc" />
+      <rect x="20" y="72" width="32" height="9" rx="4.5" fill="#e2e8f0" />
+      <path d="M54 66 L54 87 L70 76.5 Z" fill="#e2e8f0" />
+      <circle cx="76" cy="40" r="14" fill="#fbbf24" />
+      <circle cx="62" cy="55" r="9" fill="#fcd34d" />
+    </svg>
+  );
+}
+
 function ModeCard(props) {
   const st = ACCENT_STYLES[props.accent];
+  // h-full + flex-col でカードの高さをそろえ、ボタン行を下端に固定する
   return (
-    <div className={"relative w-full rounded-3xl border p-4 shadow-sm " + st.card}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span
-              className={
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold " +
-                st.badge
-              }
-            >
-              {props.step}
-            </span>
-            <span className="text-base font-bold tracking-tight text-white">
-              {props.title}
-            </span>
-          </div>
-          <div className="mt-1.5 text-xs leading-relaxed text-white/60">
-            {props.detail}
-          </div>
-        </div>
+    <div
+      className={
+        "relative flex h-full w-full flex-col rounded-3xl border p-5 shadow-lg shadow-black/20 " +
+        st.card
+      }
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold tracking-wide " +
+            st.badge
+          }
+        >
+          {props.step}
+        </span>
+        <span className="text-lg font-extrabold tracking-tight text-white">
+          {props.title}
+        </span>
       </div>
-      <div className="mt-3 flex gap-2">{props.children}</div>
+      <div className="mt-2 flex-1 text-xs leading-relaxed text-white/60">
+        {props.detail}
+      </div>
+      <div className="mt-4 flex gap-2">{props.children}</div>
     </div>
   );
 }
 
 function StartButton(props) {
   // ボタン自体にそのモードのベスト記録を表示する（記録とボタンの対応を直感的に）
+  const st = props.accent ? ACCENT_STYLES[props.accent] : null;
+  const tone = st ? st.btn : "border-white/15 bg-white/10";
+  const toneHover = st ? st.btnHover : " hover:bg-white/15";
   const rec = props.best;
   const hasRec = rec && typeof rec.sec === "number" && isFinite(rec.sec);
   let recNode = null;
@@ -955,7 +986,9 @@ function StartButton(props) {
     return (
       <button
         type="button"
-        className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-bold text-white"
+        className={
+          "flex-1 rounded-2xl border px-3 py-2.5 text-sm font-bold text-white " + tone
+        }
       >
         {content}
       </button>
@@ -965,7 +998,11 @@ function StartButton(props) {
     <button
       type="button"
       onClick={props.onClick}
-      className="flex-1 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-white/15 active:scale-[0.99]"
+      className={
+        "flex-1 rounded-2xl border px-3 py-2.5 text-sm font-bold text-white transition active:scale-[0.99] " +
+        tone +
+        toneHover
+      }
     >
       {content}
     </button>
@@ -1477,7 +1514,7 @@ export default function App() {
       setCheckLock(true);
       setOverlay({
         kind: "correct",
-        title: "せいかい！",
+        title: "正解！",
         sub: q.eq.desc,
         node: (
           <EquationStatic eq={q.eq} leftCoeffs={coeffL} rightCoeffs={coeffR} />
@@ -1486,7 +1523,7 @@ export default function App() {
       scheduleAdvance(1000);
     } else if (res.balanced && !res.simplest) {
       playInfo();
-      showToast("つり合っているけど…もっと簡単な整数比にできるよ！");
+      showToast("つり合っているが、もっと簡単な整数比にできる");
       setShakeKey(function (k) {
         return k + 1;
       });
@@ -1609,7 +1646,7 @@ export default function App() {
       setShakeKey(function (k) {
         return k + 1;
       });
-      showToast("赤いわくの物質を見直そう！");
+      showToast("赤い枠の物質を確認しよう");
       return;
     }
 
@@ -1634,7 +1671,7 @@ export default function App() {
       setCheckLock(true);
       setOverlay({
         kind: "correct",
-        title: "せいかい！",
+        title: "正解！",
         sub: q.eq.desc,
         node: <EquationStatic eq={q.eq} />,
       });
@@ -1653,7 +1690,7 @@ export default function App() {
         coeffR
       );
       if (res.balanced && !res.simplest) {
-        showToast("つり合っているけど…もっと簡単な整数比にできるよ！");
+        showToast("つり合っているが、もっと簡単な整数比にできる");
       }
     }
   }
@@ -1670,13 +1707,13 @@ export default function App() {
     if (right) {
       onSolved();
       if (q.correct) {
-        setOverlay({ kind: "correct", title: "せいかい！", sub: "つり合っている！" });
+        setOverlay({ kind: "correct", title: "正解！", sub: "つり合っている" });
         scheduleAdvance(450);
       } else {
         setOverlay({
           kind: "correct",
-          title: "せいかい！",
-          sub: "正しくはこう：",
+          title: "正解！",
+          sub: "正しくは：",
           node: <EquationStatic eq={q.eq} />,
         });
         scheduleAdvance(900);
@@ -1687,8 +1724,8 @@ export default function App() {
       setPenaltySec(penaltyRef.current);
       setOverlay({
         kind: "wrong",
-        title: "ざんねん…（＋5秒）",
-        sub: q.correct ? "これは正しい式だった！" : "正しくはこう：",
+        title: "不正解…（＋5秒）",
+        sub: q.correct ? "これは正しい式" : "正しくは：",
         node: <EquationStatic eq={q.eq} />,
       });
       scheduleAdvance(1500);
@@ -1732,7 +1769,7 @@ export default function App() {
             onClick={quitToHome}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10"
           >
-            やめる
+            中断
           </button>
         </div>
       </div>
@@ -1962,8 +1999,8 @@ export default function App() {
         </div>
         <div className="mt-2 text-center text-[11px] font-bold text-white/45">
           {blankCount === 1
-            ? "▢に入る係数を数字でこたえよう（1が入るときは「1」）"
-            : "マスをタップ → 数字をタップ（係数1のときは「1」を入力）"}
+            ? "▢に入る係数を入力（1 が入るときも「1」）"
+            : "マスを選択して数字をタップ（係数 1 も入力する）"}
         </div>
         {renderNumberPad(q, onCheckCoeff, allCoeffFilled(q) && !overlay && !checkLock)}
       </div>
@@ -2009,7 +2046,7 @@ export default function App() {
           </button>
         </div>
         <div className="mt-3 text-center text-[11px] font-bold text-white/45">
-          つり合っていれば○・まちがいなら×（ミスすると＋5秒）
+          つり合っていれば ○・誤りなら ×（ミスは＋5秒）
         </div>
       </div>
     );
@@ -2111,7 +2148,7 @@ export default function App() {
         </div>
 
         <div className="mt-2 text-center text-[11px] font-bold text-white/45">
-          カードをタップして物質を入れ、数字で係数を入力しよう
+          カードで物質を配置し、数字で係数を入力
         </div>
 
         <div className="mx-auto mt-3 grid w-full max-w-lg grid-cols-4 gap-2">
@@ -2163,7 +2200,7 @@ export default function App() {
   /* ----- カウントダウン ----- */
 
   function renderCountdown() {
-    const labels = ["3", "2", "1", "スタート!"];
+    const labels = ["3", "2", "1", "START!"];
     return (
       <div className="flex min-h-[80vh] items-center justify-center">
         <div
@@ -2253,13 +2290,13 @@ export default function App() {
           </div>
           {next ? (
             <div className="mt-3 text-xs font-bold text-white/60">
-              つぎは
+              次は
               <span className="mx-1 text-sm font-bold text-white">
                 {next.rank}
               </span>
               ランク：{next.limit}秒{next.strict ? "未満" : "以内"}
               <span className="ml-1 text-white/45">
-                （あと {formatSeconds(Math.max(0, lastResult.sec - next.limit))} 秒ちぢめよう）
+                （あと {formatSeconds(Math.max(0, lastResult.sec - next.limit))} 秒）
               </span>
             </div>
           ) : null}
@@ -2269,13 +2306,13 @@ export default function App() {
                 🎉 裏モード解放！！
               </div>
               <div className="mt-1.5 text-xs font-bold leading-relaxed text-white/80">
-                全モードSランク達成！ ホームの「○×ジャッジ」と「組み立てラボ」が
-                遊べるようになった！
+                全モードSランク達成。「○×ジャッジ」と「組み立てラボ」が
+                プレイ可能になった！
               </div>
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            まちがい：{wrongTaps} 回 ／ 最大コンボ：
+            ミス：{wrongTaps} 回 ／ 最大コンボ：
             {coalesce(lastResult.maxStreak, 0)}
           </div>
         </div>
@@ -2283,7 +2320,7 @@ export default function App() {
         {missed.length > 0 ? (
           <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="text-sm font-bold text-white">
-              まちがえた問題（{missed.length}）
+              間違えた問題（{missed.length}）
             </div>
             <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
               {missed.map(renderResultQuestionRow)}
@@ -2294,7 +2331,7 @@ export default function App() {
         <div className="mt-5 space-y-3">
           {missed.length > 0 ? (
             <ActionButton onClick={startReview}>
-              復習する（まちがえた {missed.length} 問だけ）
+              復習する（間違えた {missed.length} 問）
             </ActionButton>
           ) : null}
           <ActionButton
@@ -2321,13 +2358,18 @@ export default function App() {
       <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-8 sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs font-bold tracking-widest text-sky-300/80">
-              CHEMICAL EQUATION MASTER
+            <div className="flex items-center gap-3">
+              <LogoMark />
+              <div>
+                <div className="text-[10px] font-bold tracking-[0.22em] text-sky-300/80">
+                  CHEMICAL EQUATION MASTER
+                </div>
+                <h1 className="mt-0.5 bg-gradient-to-r from-white via-sky-100 to-sky-300 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent sm:text-4xl">
+                  化学反応式マスター
+                </h1>
+              </div>
             </div>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-              化学反応式マスター
-            </h1>
-            <div className="mt-2 text-sm font-bold text-white/60">
+            <div className="mt-2.5 text-sm font-bold text-white/60">
               中2理科「化学変化」 × タイムアタック
             </div>
           </div>
@@ -2352,7 +2394,7 @@ export default function App() {
               }}
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 hover:bg-white/10"
             >
-              あそび方
+              遊び方
             </button>
           </div>
         </div>
@@ -2362,18 +2404,20 @@ export default function App() {
             step="STEP1"
             accent="cyan"
             title="化学式マッチ"
-            detail="物質名と化学式を対応づけよう（20問）。まずはここから！"
+            detail="物質名と化学式を対応づける（20問）。まずはここから。"
           >
             <StartButton
+              accent="cyan"
               mode={MODES.FORMULA_BASIC}
               best={bestByMode[MODES.FORMULA_BASIC]}
               onClick={function () {
                 startMode(MODES.FORMULA_BASIC);
               }}
             >
-              きほん
+              基本
             </StartButton>
             <StartButton
+              accent="cyan"
               mode={MODES.FORMULA_CHALLENGE}
               best={bestByMode[MODES.FORMULA_CHALLENGE]}
               onClick={function () {
@@ -2388,18 +2432,20 @@ export default function App() {
             step="STEP2"
             accent="violet"
             title="係数バランス"
-            detail="係数を入力して左右の原子の数をそろえよう（10問）。きほんは空欄1カ所、チャレンジは全部入力！"
+            detail="係数を入力して左右の原子数をそろえる（10問）。基本は空欄1カ所、チャレンジは全係数を入力。"
           >
             <StartButton
+              accent="violet"
               mode={MODES.COEFF_BASIC}
               best={bestByMode[MODES.COEFF_BASIC]}
               onClick={function () {
                 startMode(MODES.COEFF_BASIC);
               }}
             >
-              きほん
+              基本
             </StartButton>
             <StartButton
+              accent="violet"
               mode={MODES.COEFF_CHALLENGE}
               best={bestByMode[MODES.COEFF_CHALLENGE]}
               onClick={function () {
@@ -2414,9 +2460,10 @@ export default function App() {
             step={secretUnlocked ? "裏モード" : "STEP3"}
             accent="amber"
             title="○×ジャッジ"
-            detail="この反応式、あってる？ 瞬時に見きわめよう（20問）"
+            detail="この反応式は正しいか、瞬時に見極める（20問）。ミスは＋5秒。"
           >
             <StartButton
+              accent="amber"
               mode={MODES.JUDGE}
               best={bestByMode[MODES.JUDGE]}
               inert={!secretUnlocked}
@@ -2432,9 +2479,10 @@ export default function App() {
             step={secretUnlocked ? "裏モード" : "STEP4"}
             accent="rose"
             title="組み立てラボ"
-            detail="実験の説明から反応式をまるごと組み立てる、最終ステージ（5問）"
+            detail="実験の説明文から反応式を一から組み立てる最終ステージ（5問）。"
           >
             <StartButton
+              accent="rose"
               mode={MODES.BUILD}
               best={bestByMode[MODES.BUILD]}
               inert={!secretUnlocked}
@@ -2450,7 +2498,7 @@ export default function App() {
         <div className="mt-6 text-center text-[11px] leading-relaxed text-white/35">
           ベスト記録は各ボタンに表示（この端末に保存）
           <br />
-          係数は「最も簡単な整数比」で入力（1 も入力してね）
+          係数は「最も簡単な整数比」で入力（1 も入力する）
           <br />
           中学範囲の頻出化学反応式（イオン反応式を除く）を収録
         </div>
