@@ -840,7 +840,10 @@ function HelpModal(props) {
           <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
             <div className="font-bold text-rose-200">STEP4 組み立てラボ</div>
             <div className="mt-1">
-              実験の説明文をもとに、物質カードと係数で反応式を完成させる。
+              説明文に出てくる物質を、まずカードで左辺と右辺に
+              <span className="font-bold">すべて並べる</span>。
+              そろうと係数欄が使えるようになるので、そこで係数を決める。
+              化学反応式を書くときの手順そのままの流れ。
             </div>
           </div>
           <ul className="space-y-1 pl-1 text-xs text-white/65">
@@ -1471,6 +1474,8 @@ export default function App() {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
     if (overlay || checkLock) return;
+    // 組み立てモードは物質をすべて並べてから係数を入力する
+    if (q.kind === "build" && !allSubsFilled(q)) return;
     if (!isEditableCoeffSlot(q, selPos.side, selPos.idx)) return;
     setCoeffValue(selPos.side, selPos.idx, n);
     // 次の空き係数スロットへ
@@ -1576,25 +1581,53 @@ export default function App() {
     setBadPos({});
     const used = usedCardFormulas();
     if (used[formula]) {
-      // 使用中カードをタップ → その場所から外して選び直せるようにする
+      // 使用中カードをタップ → その場所から外して選び直せるようにする。
+      // 物質が変わると係数の意味も変わるので、係数も空に戻す
       const pos = used[formula];
       setSubValue(pos.side, pos.idx, null);
+      setCoeffValue(pos.side, pos.idx, null);
       setSelPos({ side: pos.side, idx: pos.idx });
       return;
     }
     // 選択中の位置に置く（置きかえも可）
     setSubValue(selPos.side, selPos.idx, formula);
-    advanceSelection(q, selPos.side, selPos.idx, selPos.side, selPos.idx, false);
+
+    // setState は非同期なので、「置いた後」の並びを自分で作って段階を判定する
+    const nextL = subL.slice();
+    const nextR = subR.slice();
+    if (selPos.side === "L") nextL[selPos.idx] = formula;
+    else nextR[selPos.idx] = formula;
+
+    if (subsComplete(q, nextL, nextR)) {
+      // 物質がそろった → 係数の入力へ。左辺の先頭を選択状態にする
+      setSelPos({ side: "L", idx: 0 });
+    } else {
+      advanceSelection(q, selPos.side, selPos.idx, selPos.side, selPos.idx, false);
+    }
+  }
+
+  /** 指定した並びで物質がすべて埋まっているか（setState 前の値でも判定できる） */
+  function subsComplete(q, l, r) {
+    for (let i = 0; i < q.eq.left.length; i++) {
+      if (!l[i]) return false;
+    }
+    for (let i = 0; i < q.eq.right.length; i++) {
+      if (!r[i]) return false;
+    }
+    return true;
   }
 
   function allSubsFilled(q) {
-    for (let i = 0; i < q.eq.left.length; i++) {
-      if (!subL[i]) return false;
-    }
-    for (let i = 0; i < q.eq.right.length; i++) {
-      if (!subR[i]) return false;
-    }
-    return true;
+    return subsComplete(q, subL, subR);
+  }
+
+  /**
+   * 組み立てモードの段階。
+   * 物質がそろうまでは "subs"（係数欄と数字キーは無効）、
+   * そろったら "coeff"（係数を入力できる）。
+   */
+  function buildStage(q) {
+    return allSubsFilled(q) ? "coeff" : "subs";
   }
 
   function buildChosenEq(q) {
@@ -1866,25 +1899,32 @@ export default function App() {
   function CoeffSlotButton(props) {
     const selected = props.selected;
     const value = props.value;
+    // disabled: 組み立てモードで物質がそろうまで、係数欄を淡色にして触れなくする
+    const disabled = !!props.disabled;
     return (
       <button
         type="button"
         onClick={props.onClick}
+        disabled={disabled}
         className={
           "mr-0.5 inline-flex h-12 w-10 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
-          (selected
-            ? "border-sky-400 bg-sky-400/25 text-white"
-            : value === null
-              ? "border-dashed border-white/30 bg-white/5 text-white/35"
-              : "border-white/15 bg-white/10 text-amber-300")
+          (disabled
+            ? "border-white/5 bg-transparent text-transparent"
+            : selected
+              ? "border-sky-400 bg-sky-400/25 text-white"
+              : value === null
+                ? "border-dashed border-white/30 bg-white/5 text-white/35"
+                : "border-white/15 bg-white/10 text-amber-300")
         }
         style={
-          selected
+          selected && !disabled
             ? { boxShadow: "0 0 0 4px rgba(56,189,248,0.18)" }
             : undefined
         }
       >
-        {value === null ? "?" : value}
+        {/* 無効なあいだは中身を出さない（埋めるマスがひと目で分かるように）。
+            幅は保ったままなので、有効化されてもレイアウトがずれない */}
+        {disabled ? "" : value === null ? "?" : value}
       </button>
     );
   }
@@ -1946,8 +1986,10 @@ export default function App() {
     );
   }
 
-  function renderNumberPad(q, checkFn, checkEnabled) {
+  function renderNumberPad(q, checkFn, checkEnabled, padEnabled) {
     const nums = [1, 2, 3, 4, 5, 6];
+    // padEnabled 省略時は有効（係数バランスは常に入力できる）
+    const enabled = padEnabled !== false;
     return (
       <div className="mx-auto mt-5 w-full max-w-md">
         <div className="grid grid-cols-6 gap-2">
@@ -1956,10 +1998,16 @@ export default function App() {
               <button
                 key={n}
                 type="button"
+                disabled={!enabled}
                 onClick={function () {
                   onTapNumber(n);
                 }}
-                className="h-14 rounded-2xl border border-white/10 bg-white/10 text-2xl font-bold text-white transition hover:bg-white/15 active:scale-[0.97]"
+                className={
+                  "h-14 rounded-2xl border text-2xl font-bold transition " +
+                  (enabled
+                    ? "border-white/10 bg-white/10 text-white hover:bg-white/15 active:scale-[0.97]"
+                    : "border-white/5 bg-white/[0.03] text-white/20")
+                }
               >
                 {n}
               </button>
@@ -2055,6 +2103,8 @@ export default function App() {
   /* ----- 組み立てラボ画面 ----- */
 
   function renderBuildEquation(q) {
+    // 物質を並べている間は係数欄を無効にし、選択のハイライトも物質側だけに出す
+    const stage = buildStage(q);
     function renderSide(side, sideKey, subArr) {
       const nodes = [];
       for (let i = 0; i < side.length; i++) {
@@ -2073,7 +2123,8 @@ export default function App() {
           <span key={sideKey + "t" + i} className="inline-flex items-center whitespace-nowrap py-1.5">
             <CoeffSlotButton
               value={isNil(value) ? null : value}
-              selected={selected}
+              selected={stage === "coeff" && selected}
+              disabled={stage === "subs"}
               onClick={function () {
                 setSelPos({ side: sideKey, idx: i });
               }}
@@ -2083,15 +2134,16 @@ export default function App() {
               onClick={function () {
                 setSelPos({ side: sideKey, idx: i });
                 if (sub) {
-                  // 配置済みの物質をタップで外す
+                  // 配置済みの物質をタップで外す。係数も意味を失うので空に戻す
                   setSubValue(sideKey, i, null);
+                  setCoeffValue(sideKey, i, null);
                 }
               }}
               className={
                 "inline-flex h-12 min-w-[64px] items-center justify-center rounded-xl border-2 px-2 transition " +
                 (isBad
                   ? "border-rose-400 bg-rose-500/20"
-                  : selected
+                  : stage === "subs" && selected
                     ? "border-sky-400 bg-sky-400/15"
                     : sub
                       ? "border-white/15 bg-white/10"
@@ -2124,8 +2176,24 @@ export default function App() {
     );
   }
 
+  function StageChip(props) {
+    return (
+      <span
+        className={
+          "rounded-full border px-3 py-1 text-[11px] font-bold transition " +
+          (props.active
+            ? "border-sky-300/40 bg-sky-400/15 text-sky-100"
+            : "border-white/10 text-white/30")
+        }
+      >
+        {props.children}
+      </span>
+    );
+  }
+
   function renderBuildRun(q) {
     const used = usedCardFormulas();
+    const stage = buildStage(q);
     const canCheck = allSubsFilled(q) && allCoeffFilled(q) && !overlay && !checkLock;
     return (
       <div className="mt-5">
@@ -2136,7 +2204,14 @@ export default function App() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 px-3 py-6">
+        {/* 解く手順：まず物質を並べ、そろってから係数を決める */}
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <StageChip active={stage === "subs"}>① 物質を並べる</StageChip>
+          <span className="text-xs font-bold text-white/25">→</span>
+          <StageChip active={stage === "coeff"}>② 係数を決める</StageChip>
+        </div>
+
+        <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 px-3 py-6">
           {renderBuildEquation(q)}
           {hintOn ? (
             <AtomHintPanel
@@ -2147,8 +2222,13 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="mt-2 text-center text-[11px] font-bold text-white/45">
-          カードで物質を配置し、数字で係数を入力
+        <div
+          key={stage}
+          className="mt-2 text-center text-[11px] font-bold text-white/45 animate-fadein"
+        >
+          {stage === "subs"
+            ? "説明文に出てくる物質をカードから選び、左辺と右辺に並べよう"
+            : "左右の原子の数がそろうように係数を入力（物質を直すときはカードをタップ）"}
         </div>
 
         <div className="mx-auto mt-3 grid w-full max-w-lg grid-cols-4 gap-2">
@@ -2174,7 +2254,7 @@ export default function App() {
           })}
         </div>
 
-        {renderNumberPad(q, onCheckBuild, canCheck)}
+        {renderNumberPad(q, onCheckBuild, canCheck, stage === "coeff")}
       </div>
     );
   }

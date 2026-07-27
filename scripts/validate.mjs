@@ -52,6 +52,52 @@ for (const e of EQUATIONS) {
   }
 }
 
+// 説明文に生成物の名前が書かれているかの検査
+// 組み立てモードでは、生徒が説明文の物質名を手掛かりにカードを探すため、
+// 生成物が書かれていない／名前が SUBSTANCES とずれていると問題が解けなくなる。
+//
+// 「銅」は「酸化銅」の、「水」は「水素」の一部でもあるため、説明文全体を対象に
+// すると素通りしてしまう。そこで「〜と、」で前半（反応物・操作）と後半（生成物）に
+// 分け、後半だけを検査する。この分割ができること自体が書式の検査にもなる。
+function nameVariants(name) {
+  // 「塩化水素（塩酸）」→ 括弧の前後どちらの表記でも可とする
+  const out = [name];
+  const m = name.match(/^(.+?)（(.+?)）$/);
+  if (m) {
+    out.push(m[1]);
+    out.push(m[2]);
+  }
+  return out;
+}
+
+for (const e of EQUATIONS) {
+  const at = e.desc.indexOf("と、");
+  if (at < 0) {
+    fail(
+      e.id +
+        " の説明文が「〈反応物〉を〈操作〉すると、〈生成物〉ができる」の書式でない: " +
+        e.desc
+    );
+    continue;
+  }
+  const productPart = e.desc.slice(at + 2);
+  const checked = new Set();
+  for (const item of e.right) {
+    if (checked.has(item.formula)) continue;
+    checked.add(item.formula);
+    const sub = substanceByFormula(item.formula);
+    if (!sub) continue; // 物質データ未登録は上のチェックで報告済み
+    const mentioned = nameVariants(sub.name).some(
+      (v) => productPart.indexOf(v) >= 0
+    );
+    if (!mentioned) {
+      fail(
+        e.id + " の説明文に生成物「" + sub.name + "」が書かれていない: " + e.desc
+      );
+    }
+  }
+}
+
 // プール数の確認（タイムアタックの出題数を満たすか）
 const basicSub = quizSubstances(1).length;
 const chalSub = quizSubstances(2).length;
