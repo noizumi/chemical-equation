@@ -52,6 +52,20 @@ for (const e of EQUATIONS) {
   }
 }
 
+// 同じ辺に同じ化学式が2回出ていないか
+// （組み立てモードは化学式から正解の係数を引くため、重複すると判定できない）
+for (const e of EQUATIONS) {
+  for (const [label, side] of [["左辺", e.left], ["右辺", e.right]]) {
+    const seenF = new Set();
+    for (const item of side) {
+      if (seenF.has(item.formula)) {
+        fail(e.id + " の" + label + "に同じ化学式が2回出ている: " + item.formula);
+      }
+      seenF.add(item.formula);
+    }
+  }
+}
+
 // 説明文に生成物の名前が書かれているかの検査
 // 組み立てモードでは、生徒が説明文の物質名を手掛かりにカードを探すため、
 // 生成物が書かれていない／名前が SUBSTANCES とずれていると問題が解けなくなる。

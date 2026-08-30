@@ -1207,6 +1207,10 @@ export default function App() {
       clearTimeout(shakeTimerRef.current);
       shakeTimerRef.current = null;
     }
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
   }
 
   function resetQuestionState(q) {
@@ -1380,7 +1384,6 @@ export default function App() {
 
   function quitToHome() {
     clearTransientTimers();
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(null);
     setOverlay(null);
     setScreen("home");
@@ -1422,18 +1425,19 @@ export default function App() {
     } else {
       markMissed();
       setOptFlash({ idx: idx, kind: "wrong" });
-      const nextDisabled = {};
-      for (const k in disabledOpts) {
-        if (Object.prototype.hasOwnProperty.call(disabledOpts, k)) {
-          nextDisabled[k] = true;
-        }
-      }
-      nextDisabled[idx] = true;
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = setTimeout(function () {
         setOptFlash(null);
       }, 350);
-      setDisabledOpts(nextDisabled);
+      // 直前の状態から積み上げる（連続タップで取りこぼさないように）
+      setDisabledOpts(function (prev) {
+        const next = {};
+        for (const k in prev) {
+          if (Object.prototype.hasOwnProperty.call(prev, k)) next[k] = true;
+        }
+        next[idx] = true;
+        return next;
+      });
     }
   }
 
@@ -1691,7 +1695,12 @@ export default function App() {
       setSelPos({ side: pos.side, idx: pos.idx });
       return;
     }
-    // 選択中の位置に置く（置きかえも可）
+    // 選択中の位置に置く（置きかえも可）。すでに別の物質が入っていた枠を
+    // 上書きする場合、前の物質に対して入れた係数は意味を失うので空に戻す
+    const prevSub = selPos.side === "L" ? subL[selPos.idx] : subR[selPos.idx];
+    if (prevSub && prevSub !== formula) {
+      setCoeffValue(selPos.side, selPos.idx, null);
+    }
     setSubValue(selPos.side, selPos.idx, formula);
 
     // setState は非同期なので、「置いた後」の並びを自分で作って段階を判定する
@@ -1810,10 +1819,8 @@ export default function App() {
       });
       scheduleAdvance(1100);
     } else {
-      markMissed();
-      setHintOn(true);
-      triggerShake();
-      // つり合っているが最簡でない場合のメッセージ
+      // つり合ってはいるが最簡でないだけなら、係数バランスと同じく
+      // ミス扱いにせず「もっと簡単な整数比に」と促すだけにする
       const chosen = buildChosenEq(q);
       const res = checkBalance(
         { left: chosen.left, right: chosen.right },
@@ -1821,7 +1828,13 @@ export default function App() {
         coeffR
       );
       if (res.balanced && !res.simplest) {
+        playInfo();
         showToast("つり合っているが、もっと簡単な整数比にできる");
+        triggerShake();
+      } else {
+        markMissed();
+        setHintOn(true);
+        triggerShake();
       }
     }
   }
@@ -2358,7 +2371,9 @@ export default function App() {
 
         <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 px-3 py-6">
           {renderBuildEquation(q)}
-          {hintOn ? (
+          {/* 物質が欠けていると buildChosenEq が穴埋めの H を混ぜてしまい、
+              実際には存在しない元素が並ぶ。そろっているときだけ表示する */}
+          {hintOn && stage === "coeff" ? (
             <AtomHintPanel
               eq={buildChosenEq(q)}
               leftCoeffs={coeffL}
@@ -2482,6 +2497,14 @@ export default function App() {
     const missed = lastResult.missedQuestions;
     const next = lastResult.phase === "main" ? nextRankInfo(lastResult.mode, lastResult.sec) : null;
     const noMiss = wrongTaps === 0;
+    // 復習は問題数も評価基準も本番と違うため、グレード用の見出し・講評は使わない
+    const isReview = lastResult.phase === "review";
+    const headline = isReview ? "復習おつかれさま" : gr.title;
+    const comment = isReview
+      ? noMiss
+        ? "今回はすべて正解。この調子で本番のタイムも縮めよう。"
+        : "まだ迷う問題がある。もう一度復習してみよう。"
+      : gr.comment;
     const gradeColor =
       gr.grade === "SS"
         ? "text-amber-300 [text-shadow:0_0_18px_rgba(251,191,36,0.6)]"
@@ -2504,9 +2527,9 @@ export default function App() {
           {lastResult.phase === "main" ? (
             <div className={"mt-3 text-5xl font-extrabold " + gradeColor}>{gr.grade}</div>
           ) : null}
-          <div className="mt-3 text-lg font-bold text-white">{gr.title}</div>
+          <div className="mt-3 text-lg font-bold text-white">{headline}</div>
           <div className="mx-auto mt-1 max-w-sm text-sm text-white/65">
-            {gr.comment}
+            {comment}
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             {lastResult.isNewBest ? (
