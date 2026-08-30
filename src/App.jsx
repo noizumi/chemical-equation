@@ -1073,7 +1073,12 @@ export default function App() {
   const [selPos, setSelPos] = useState({ side: "L", idx: 0 });
   const [hintOn, setHintOn] = useState(false);
   const [badPos, setBadPos] = useState({});
+  // シェイク演出。key の変化で再マウントさせてアニメを再生し、
+  // 終わったらクラスを外す（クラスが付きっぱなしだと、次回マウント時に
+  // 誤答していないのに揺れてしまう）
   const [shakeKey, setShakeKey] = useState(0);
+  const [shakeOn, setShakeOn] = useState(false);
+  const shakeTimerRef = useRef(null);
   const [checkLock, setCheckLock] = useState(false);
 
   const [lastResult, setLastResult] = useState(null);
@@ -1102,6 +1107,7 @@ export default function App() {
       if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
     };
   }, []);
 
@@ -1175,6 +1181,19 @@ export default function App() {
 
   /* ---------- 実行制御 ---------- */
 
+  /** 誤答時のシェイク演出を1回だけ再生する */
+  function triggerShake() {
+    setShakeKey(function (k) {
+      return k + 1;
+    });
+    setShakeOn(true);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(function () {
+      setShakeOn(false);
+      shakeTimerRef.current = null;
+    }, 400); // tailwind.config.js の shake（0.35s）より少し長く
+  }
+
   function clearTransientTimers() {
     if (advanceTimerRef.current) {
       clearTimeout(advanceTimerRef.current);
@@ -1183,6 +1202,10 @@ export default function App() {
     if (flashTimerRef.current) {
       clearTimeout(flashTimerRef.current);
       flashTimerRef.current = null;
+    }
+    if (shakeTimerRef.current) {
+      clearTimeout(shakeTimerRef.current);
+      shakeTimerRef.current = null;
     }
   }
 
@@ -1242,6 +1265,8 @@ export default function App() {
     streakRef.current = 0;
     maxStreakRef.current = 0;
     setStreak(0);
+    setShakeKey(0);
+    setShakeOn(false);
     setToast(null);
     resumeAudio();
     resetQuestionState(qs[0]);
@@ -1602,15 +1627,11 @@ export default function App() {
     } else if (res.balanced && !res.simplest) {
       playInfo();
       showToast("つり合っているが、もっと簡単な整数比にできる");
-      setShakeKey(function (k) {
-        return k + 1;
-      });
+      triggerShake();
     } else {
       markMissed();
       setHintOn(true);
-      setShakeKey(function (k) {
-        return k + 1;
-      });
+      triggerShake();
     }
   }
 
@@ -1757,9 +1778,7 @@ export default function App() {
       for (let i = 0; i < badL.length; i++) bp[posKey("L", badL[i])] = true;
       for (let i = 0; i < badR.length; i++) bp[posKey("R", badR[i])] = true;
       setBadPos(bp);
-      setShakeKey(function (k) {
-        return k + 1;
-      });
+      triggerShake();
       showToast("赤い枠の物質を確認しよう");
       return;
     }
@@ -1793,9 +1812,7 @@ export default function App() {
     } else {
       markMissed();
       setHintOn(true);
-      setShakeKey(function (k) {
-        return k + 1;
-      });
+      triggerShake();
       // つり合っているが最簡でない場合のメッセージ
       const chosen = buildChosenEq(q);
       const res = checkBalance(
@@ -2071,7 +2088,7 @@ export default function App() {
         key={shakeKey}
         className={
           "flex flex-wrap items-center justify-center " +
-          (shakeKey > 0 ? "animate-shake" : "")
+          (shakeOn ? "animate-shake" : "")
         }
       >
         {renderSide(q.eq.left, "L")}
@@ -2294,7 +2311,7 @@ export default function App() {
         key={shakeKey}
         className={
           "flex flex-wrap items-center justify-center " +
-          (shakeKey > 0 ? "animate-shake" : "")
+          (shakeOn ? "animate-shake" : "")
         }
       >
         {renderSide(q.eq.left, "L", subL)}
