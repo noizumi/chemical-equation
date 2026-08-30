@@ -825,7 +825,9 @@ function HelpModal(props) {
             <div className="mt-1">
               ▢に数字を入れて左右の原子数をそろえる。
               <span className="font-bold">基本は空欄1カ所</span>
-              （他の係数は印字済み）、チャレンジは全係数を入力。
+              （他の係数は印字済み）で、入力した時点で判定される。
+              チャレンジは全係数を入力し、「判定する」で答え合わせ。
+              入力をやり直すときは「クリア」で全欄を一度に消せる。
               係数は<span className="font-bold">最も簡単な整数比</span>で、
               通常は書かない「1」もこのゲームでは入力する。
             </div>
@@ -856,7 +858,8 @@ function HelpModal(props) {
             <li>・効果音はホーム右上のボタンで ON にできる（初期設定は OFF）。</li>
             <li className="font-bold text-amber-200/90">
               ・STEP3・STEP4 は裏モード。STEP1・STEP2 の全4モードで
-              Sランク以上をとると解放。
+              Sランク以上をとると解放される（それまではカードが
+              モノクロで、タップしても始まらない）。
             </li>
           </ul>
         </div>
@@ -916,9 +919,13 @@ function LogoMark() {
 
 function ModeCard(props) {
   const st = ACCENT_STYLES[props.accent];
-  // h-full + flex-col でカードの高さをそろえ、ボタン行を下端に固定する
+  // h-full + flex-col でカードの高さをそろえ、ボタン行を下端に固定する。
+  // locked（未開放の裏モード）はカード全体をモノクロにして、遊べないことを示す
   return (
     <div
+      style={
+        props.locked ? { filter: "grayscale(1)", opacity: 0.6 } : undefined
+      }
       className={
         "relative flex h-full w-full flex-col rounded-3xl border p-5 shadow-lg shadow-black/20 " +
         st.card
@@ -1478,6 +1485,18 @@ export default function App() {
     if (q.kind === "build" && !allSubsFilled(q)) return;
     if (!isEditableCoeffSlot(q, selPos.side, selPos.idx)) return;
     setCoeffValue(selPos.side, selPos.idx, n);
+
+    // 空欄が1カ所だけのとき（係数バランス・基本）は、入力した時点で判定する。
+    // setState は非同期なので、入力後の並びを自分で作って渡す
+    if (q.kind === "coeff" && blankCountOf(q) === 1) {
+      const nextL = coeffL.slice();
+      const nextR = coeffR.slice();
+      if (selPos.side === "L") nextL[selPos.idx] = n;
+      else nextR[selPos.idx] = n;
+      runCoeffCheck(q, nextL, nextR);
+      return;
+    }
+
     // 次の空き係数スロットへ
     const slots = currentSlots(q);
     let start = 0;
@@ -1507,12 +1526,68 @@ export default function App() {
     return true;
   }
 
-  function onCheckCoeff() {
+  /** 係数バランスの空欄数（基本は1、チャレンジは全スロット） */
+  function blankCountOf(q) {
+    if (!q || q.kind !== "coeff") return 0;
+    let c = 0;
+    for (let i = 0; i < q.givenL.length; i++) {
+      if (q.givenL[i] === null) c++;
+    }
+    for (let i = 0; i < q.givenR.length; i++) {
+      if (q.givenR[i] === null) c++;
+    }
+    return c;
+  }
+
+  /** 入力済みの係数が1つでもあるか（クリアボタンの有効判定） */
+  function hasAnyCoeffInput(q) {
+    if (!q) return false;
+    if (q.kind === "coeff") {
+      for (let i = 0; i < q.givenL.length; i++) {
+        if (q.givenL[i] === null && !isNil(coeffL[i])) return true;
+      }
+      for (let i = 0; i < q.givenR.length; i++) {
+        if (q.givenR[i] === null && !isNil(coeffR[i])) return true;
+      }
+      return false;
+    }
+    for (let i = 0; i < coeffL.length; i++) {
+      if (!isNil(coeffL[i])) return true;
+    }
+    for (let i = 0; i < coeffR.length; i++) {
+      if (!isNil(coeffR[i])) return true;
+    }
+    return false;
+  }
+
+  /** 入力した係数を一括で取り消す（印字済みの係数と、配置した物質はそのまま） */
+  function onClearCoeffs() {
     const q = questionsRef.current[qIndexRef.current];
-    if (!q || q.kind !== "coeff") return;
+    if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
     if (overlay || checkLock) return;
-    if (!allCoeffFilled(q)) return;
-    const res = checkBalance(q.eq, coeffL, coeffR);
+    let sel = null;
+    if (q.kind === "coeff") {
+      setCoeffL(q.givenL.slice());
+      setCoeffR(q.givenR.slice());
+      for (let i = 0; i < q.givenL.length && !sel; i++) {
+        if (q.givenL[i] === null) sel = { side: "L", idx: i };
+      }
+      for (let i = 0; i < q.givenR.length && !sel; i++) {
+        if (q.givenR[i] === null) sel = { side: "R", idx: i };
+      }
+    } else {
+      setCoeffL(q.eq.left.map(function () { return null; }));
+      setCoeffR(q.eq.right.map(function () { return null; }));
+      sel = { side: "L", idx: 0 };
+    }
+    setSelPos(sel ? sel : { side: "L", idx: 0 });
+    // 係数が空の状態では原子数パネルは意味をなさないので閉じる
+    setHintOn(false);
+  }
+
+  /** 係数の正誤判定。入力途中の配列を渡せるよう、状態ではなく引数で受け取る */
+  function runCoeffCheck(q, l, r) {
+    const res = checkBalance(q.eq, l, r);
     if (res.balanced && res.simplest) {
       onSolved();
       pauseTimer();
@@ -1521,9 +1596,7 @@ export default function App() {
         kind: "correct",
         title: "正解！",
         sub: q.eq.desc,
-        node: (
-          <EquationStatic eq={q.eq} leftCoeffs={coeffL} rightCoeffs={coeffR} />
-        ),
+        node: <EquationStatic eq={q.eq} leftCoeffs={l} rightCoeffs={r} />,
       });
       scheduleAdvance(1000);
     } else if (res.balanced && !res.simplest) {
@@ -1539,6 +1612,14 @@ export default function App() {
         return k + 1;
       });
     }
+  }
+
+  function onCheckCoeff() {
+    const q = questionsRef.current[qIndexRef.current];
+    if (!q || q.kind !== "coeff") return;
+    if (overlay || checkLock) return;
+    if (!allCoeffFilled(q)) return;
+    runCoeffCheck(q, coeffL, coeffR);
   }
 
   /* ---------- 組み立てラボ ---------- */
@@ -1945,7 +2026,21 @@ export default function App() {
         const selected = selPos.side === sideKey && selPos.idx === i;
         const isGiven = given[i] !== null;
         nodes.push(
-          <span key={sideKey + "t" + i} className="inline-flex items-center whitespace-nowrap py-1">
+          <span
+            key={sideKey + "t" + i}
+            // 係数の枠は小さいので、化学式をクリックしてもその枠を選べるようにする
+            onClick={
+              isGiven
+                ? undefined
+                : function () {
+                    setSelPos({ side: sideKey, idx: i });
+                  }
+            }
+            className={
+              "inline-flex items-center whitespace-nowrap rounded-xl py-1 " +
+              (isGiven ? "" : "cursor-pointer")
+            }
+          >
             {isGiven ? (
               // 印字済みの係数は正式な書き方（1 は書かない）で表示
               given[i] > 1 ? (
@@ -1986,10 +2081,15 @@ export default function App() {
     );
   }
 
-  function renderNumberPad(q, checkFn, checkEnabled, padEnabled) {
+  /**
+   * 数字キー＋操作ボタン。
+   * opts: { checkFn, checkEnabled, padEnabled, showCheck, onClear, clearEnabled }
+   */
+  function renderNumberPad(opts) {
     const nums = [1, 2, 3, 4, 5, 6];
     // padEnabled 省略時は有効（係数バランスは常に入力できる）
-    const enabled = padEnabled !== false;
+    const enabled = opts.padEnabled !== false;
+    const showCheck = opts.showCheck !== false;
     return (
       <div className="mx-auto mt-5 w-full max-w-md">
         <div className="grid grid-cols-6 gap-2">
@@ -2014,11 +2114,32 @@ export default function App() {
             );
           })}
         </div>
-        <div className="mt-3">
-          <ActionButton onClick={checkFn} disabled={!checkEnabled}>
-            判定する
-          </ActionButton>
-        </div>
+        {showCheck || opts.onClear ? (
+          <div className="mt-3 flex gap-2">
+            {opts.onClear ? (
+              <button
+                type="button"
+                onClick={opts.onClear}
+                disabled={!opts.clearEnabled}
+                className={
+                  "shrink-0 rounded-2xl border px-5 py-4 text-base font-bold transition active:scale-[0.99] " +
+                  (opts.clearEnabled
+                    ? "border-white/10 bg-white/5 text-white/85 hover:bg-white/10"
+                    : "border-white/5 bg-white/[0.03] text-white/25")
+                }
+              >
+                クリア
+              </button>
+            ) : null}
+            {showCheck ? (
+              <div className="flex-1">
+                <ActionButton onClick={opts.checkFn} disabled={!opts.checkEnabled}>
+                  判定する
+                </ActionButton>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -2047,10 +2168,17 @@ export default function App() {
         </div>
         <div className="mt-2 text-center text-[11px] font-bold text-white/45">
           {blankCount === 1
-            ? "▢に入る係数を入力（1 が入るときも「1」）"
-            : "マスを選択して数字をタップ（係数 1 も入力する）"}
+            ? "▢に入る係数を入力すると、その場で判定される（1 が入るときも「1」）"
+            : "マスを選んで数字をタップ（係数 1 も入力する）"}
         </div>
-        {renderNumberPad(q, onCheckCoeff, allCoeffFilled(q) && !overlay && !checkLock)}
+        {renderNumberPad({
+          checkFn: onCheckCoeff,
+          checkEnabled: allCoeffFilled(q) && !overlay && !checkLock,
+          // 空欄が1カ所のときは入力した時点で判定するので、判定ボタンは出さない
+          showCheck: blankCount !== 1,
+          onClear: blankCount > 1 ? onClearCoeffs : null,
+          clearEnabled: hasAnyCoeffInput(q) && !overlay && !checkLock,
+        })}
       </div>
     );
   }
@@ -2254,7 +2382,14 @@ export default function App() {
           })}
         </div>
 
-        {renderNumberPad(q, onCheckBuild, canCheck, stage === "coeff")}
+        {renderNumberPad({
+          checkFn: onCheckBuild,
+          checkEnabled: canCheck,
+          padEnabled: stage === "coeff",
+          onClear: onClearCoeffs,
+          clearEnabled:
+            stage === "coeff" && hasAnyCoeffInput(q) && !overlay && !checkLock,
+        })}
       </div>
     );
   }
@@ -2537,7 +2672,8 @@ export default function App() {
           </ModeCard>
 
           <ModeCard
-            step={secretUnlocked ? "裏モード" : "STEP3"}
+            step={secretUnlocked ? "STEP3" : "🔒 裏モード"}
+            locked={!secretUnlocked}
             accent="amber"
             title="○×ジャッジ"
             detail="この反応式は正しいか、瞬時に見極める（20問）。ミスは＋5秒。"
@@ -2556,7 +2692,8 @@ export default function App() {
           </ModeCard>
 
           <ModeCard
-            step={secretUnlocked ? "裏モード" : "STEP4"}
+            step={secretUnlocked ? "STEP4" : "🔒 裏モード"}
+            locked={!secretUnlocked}
             accent="rose"
             title="組み立てラボ"
             detail="実験の説明文から反応式を一から組み立てる最終ステージ（5問）。"
