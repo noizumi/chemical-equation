@@ -2641,9 +2641,6 @@ export default function App() {
                 </h1>
               </div>
             </div>
-            <div className="mt-2.5 text-sm font-bold text-white/60">
-              中2理科「化学変化」 × タイムアタック
-            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
