@@ -1421,7 +1421,20 @@ export default function App() {
       onSolved();
       pauseTimer();
       setOptFlash({ idx: idx, kind: "correct" });
-      scheduleAdvance(300);
+      // 他のモードと同じく「正解！」のカットインを出す。
+      // 物質名と化学式を並べて、対応づけをその場で印象づける
+      setOverlay({
+        kind: "correct",
+        title: "正解！",
+        node: (
+          <span className="inline-flex flex-wrap items-baseline justify-center gap-2">
+            <span className="text-lg font-bold text-white/80">{q.sub.name}</span>
+            <span className="text-white/40">＝</span>
+            <FormulaText formula={q.sub.f} className="text-2xl font-extrabold" />
+          </span>
+        ),
+      });
+      scheduleAdvance(550);
     } else {
       markMissed();
       setOptFlash({ idx: idx, kind: "wrong" });
@@ -1940,11 +1953,14 @@ export default function App() {
     const isN2F = q.dir === "n2f";
     return (
       <div className="mt-6">
-        <div className="rounded-3xl border border-white/10 bg-white/5 px-5 py-8 text-center">
+        <div className="rounded-3xl border border-white/10 bg-white/5 px-5 py-6 text-center">
           <div className="text-xs font-bold text-white/55">
             {isN2F ? "この物質の化学式は？" : "この化学式の物質名は？"}
           </div>
-          <div className="mt-3">
+          {/* 物質名（日本語）と化学式（添字あり）で文字の高さが違うため、
+              枠の高さを固定して中央ぞろえにする。問題が変わっても
+              下の選択肢ボタンの位置がずれない */}
+          <div className="mt-3 flex h-20 items-center justify-center sm:h-24">
             {isN2F ? (
               <span className="text-3xl font-extrabold tracking-tight sm:text-4xl">
                 {q.sub.name}
@@ -1984,7 +2000,8 @@ export default function App() {
                 }}
                 style={Object.keys(styleObj).length ? styleObj : undefined}
                 className={
-                  "flex min-h-[72px] items-center justify-center rounded-2xl border px-3 py-4 text-center transition active:scale-[0.99] " +
+                  // 長い物質名が2行になっても高さが変わらないよう固定
+                  "flex h-20 items-center justify-center rounded-2xl border px-3 py-2 text-center transition active:scale-[0.99] " +
                   (disabled
                     ? "border-white/10 bg-white/5 text-white/30"
                     : "border-white/10 bg-white/10 text-white hover:bg-white/15")
