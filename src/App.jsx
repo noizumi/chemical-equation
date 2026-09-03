@@ -807,7 +807,7 @@ function HelpModal(props) {
           <button
             type="button"
             onClick={props.onClose}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10"
+            className="min-h-[44px] rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-bold text-white/80 hover:bg-white/10"
           >
             閉じる
           </button>
@@ -1924,7 +1924,7 @@ export default function App() {
           <button
             type="button"
             onClick={quitToHome}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10"
+            className="min-h-[44px] rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-bold text-white/70 hover:bg-white/10"
           >
             中断
           </button>
@@ -2035,7 +2035,7 @@ export default function App() {
         onClick={props.onClick}
         disabled={disabled}
         className={
-          "mr-0.5 inline-flex h-12 w-10 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
+          "mr-0.5 inline-flex h-12 w-11 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
           (disabled
             ? "border-white/5 bg-transparent text-transparent"
             : selected
@@ -2075,7 +2075,9 @@ export default function App() {
         nodes.push(
           <span
             key={sideKey + "t" + i}
-            // 係数の枠は小さいので、化学式をクリックしてもその枠を選べるようにする
+            // 係数の枠は小さいので、化学式をタップしてもその枠を選べるようにする。
+            // role="button" にすることで iOS でもダブルタップ拡大の待ちが入らない
+            role={isGiven ? undefined : "button"}
             onClick={
               isGiven
                 ? undefined
@@ -2661,7 +2663,7 @@ export default function App() {
               onClick={function () {
                 setShowHelp(true);
               }}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 hover:bg-white/10"
+              className="min-h-[44px] rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 hover:bg-white/10"
             >
               遊び方
             </button>
