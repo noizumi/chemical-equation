@@ -1019,7 +1019,81 @@ function StartButton(props) {
   );
 }
 
+/* ================= 実行画面の部品 =================
+ * この3つは必ずモジュールのトップレベルに置くこと。
+ * App の内側で定義すると、レンダリングのたびに関数の同一性が変わり、
+ * React が「別のコンポーネント」とみなして DOM を作り直してしまう。
+ * タイマーで毎秒10回再描画されるため、作り直しも毎秒10回起き、
+ * iPad（WebKit）では指を置いた要素が消えて click が発火しなくなる。
+ */
+
+function CoeffSlotButton(props) {
+  const selected = props.selected;
+  const value = props.value;
+  // disabled: 組み立てモードで物質がそろうまで、係数欄を淡色にして触れなくする
+  const disabled = !!props.disabled;
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={disabled}
+      className={
+        "mr-0.5 inline-flex h-12 w-11 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
+        (disabled
+          ? "border-white/5 bg-transparent text-transparent"
+          : selected
+            ? "border-sky-400 bg-sky-400/25 text-white"
+            : value === null
+              ? "border-dashed border-white/30 bg-white/5 text-white/35"
+              : "border-white/15 bg-white/10 text-amber-300")
+      }
+      style={
+        selected && !disabled
+          ? { boxShadow: "0 0 0 4px rgba(56,189,248,0.18)" }
+          : undefined
+      }
+    >
+      {/* 無効なあいだは中身を出さない（埋めるマスがひと目で分かるように）。
+          幅は保ったままなので、有効化されてもレイアウトがずれない */}
+      {disabled ? "" : value === null ? "?" : value}
+    </button>
+  );
+}
+
+function StageChip(props) {
+  return (
+    <span
+      className={
+        "rounded-full border px-3 py-1 text-[11px] font-bold transition " +
+        (props.active
+          ? "border-sky-300/40 bg-sky-400/15 text-sky-100"
+          : "border-white/10 text-white/30")
+      }
+    >
+      {props.children}
+    </span>
+  );
+}
+
+/** 経過時間の表示。ここだけが毎秒10回更新されるよう切り離してある
+ *  （App 全体を再描画すると、その間の DOM 変更でタップが不安定になる） */
+function ElapsedTime(props) {
+  const read = props.read;
+  const [sec, setSec] = useState(read());
+  useEffect(function () {
+    const t = setInterval(function () {
+      setSec(read());
+    }, 100);
+    return function () {
+      clearInterval(t);
+    };
+    // read は ref だけを見る関数なので、張り替えなくても最新値が取れる
+  }, []);
+  return <>{formatSeconds(sec)}</>;
+}
+
 /* ================= メインアプリ ================= */
+
 
 export default function App() {
   const [screen, setScreen] = useState("home"); // home | countdown | run | result
@@ -1032,7 +1106,6 @@ export default function App() {
   const questionsRef = useRef([]);
   const qIndexRef = useRef(0);
 
-  const [elapsed, setElapsed] = useState(0);
   const startMsRef = useRef(null);
   const penaltyRef = useRef(0);
   const [penaltySec, setPenaltySec] = useState(0);
@@ -1137,19 +1210,6 @@ export default function App() {
     }
   }
 
-  useEffect(
-    function () {
-      if (screen !== "run") return undefined;
-      const t = setInterval(function () {
-        setElapsed(currentElapsedSec());
-      }, 100);
-      return function () {
-        clearInterval(t);
-      };
-    },
-    [screen]
-  );
-
   /* ---------- カウントダウン ---------- */
 
   useEffect(
@@ -1169,7 +1229,6 @@ export default function App() {
         startMsRef.current = Date.now();
         pauseStartRef.current = null;
         totalPausedMsRef.current = 0;
-        setElapsed(0);
         setScreen("run");
       }, 500);
       return function () {
@@ -1918,7 +1977,7 @@ export default function App() {
             </span>
           ) : null}
           <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-lg font-extrabold tabular-nums text-white">
-            {formatSeconds(elapsed)}
+            <ElapsedTime read={currentElapsedSec} />
             <span className="ml-0.5 text-xs font-bold text-white/50">s</span>
           </div>
           <button
@@ -2023,39 +2082,6 @@ export default function App() {
   }
 
   /* ----- 係数スロット ----- */
-
-  function CoeffSlotButton(props) {
-    const selected = props.selected;
-    const value = props.value;
-    // disabled: 組み立てモードで物質がそろうまで、係数欄を淡色にして触れなくする
-    const disabled = !!props.disabled;
-    return (
-      <button
-        type="button"
-        onClick={props.onClick}
-        disabled={disabled}
-        className={
-          "mr-0.5 inline-flex h-12 w-11 items-center justify-center rounded-xl border-2 align-middle text-xl font-bold transition " +
-          (disabled
-            ? "border-white/5 bg-transparent text-transparent"
-            : selected
-              ? "border-sky-400 bg-sky-400/25 text-white"
-              : value === null
-                ? "border-dashed border-white/30 bg-white/5 text-white/35"
-                : "border-white/15 bg-white/10 text-amber-300")
-        }
-        style={
-          selected && !disabled
-            ? { boxShadow: "0 0 0 4px rgba(56,189,248,0.18)" }
-            : undefined
-        }
-      >
-        {/* 無効なあいだは中身を出さない（埋めるマスがひと目で分かるように）。
-            幅は保ったままなので、有効化されてもレイアウトがずれない */}
-        {disabled ? "" : value === null ? "?" : value}
-      </button>
-    );
-  }
 
   function renderCoeffEquation(q) {
     function renderSide(side, sideKey) {
@@ -2350,21 +2376,6 @@ export default function App() {
         <span className="mx-2 text-2xl font-bold text-sky-300">→</span>
         {renderSide(q.eq.right, "R", subR)}
       </div>
-    );
-  }
-
-  function StageChip(props) {
-    return (
-      <span
-        className={
-          "rounded-full border px-3 py-1 text-[11px] font-bold transition " +
-          (props.active
-            ? "border-sky-300/40 bg-sky-400/15 text-sky-100"
-            : "border-white/10 text-white/30")
-        }
-      >
-        {props.children}
-      </span>
     );
   }
 
