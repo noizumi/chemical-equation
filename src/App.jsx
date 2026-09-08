@@ -74,11 +74,21 @@ const MODES = {
 const MODE_CONFIG = {};
 
 /* グレード基準タイム（秒）
-   正解演出中はタイマーが止まるため、純粋な解答時間で評価される */
+   正解演出中はタイマーが止まるため、純粋な解答時間で評価される
+
+   maxMiss: これを超えるミスをした回は記録を残さない（でたらめなタップで
+   ベスト記録や裏モード解放を取られるのを防ぐ）。当てずっぽうで突破できる
+   モードほど厳しくしている：
+   ・化学式マッチ … 誤答した選択肢が消えるので当てずっぽうでも必ず正解できる。
+     4択ランダムだと20問で平均30ミスになるため 12 で確実に弾ける
+   ・○×ジャッジ … 2択でランダムだと平均10ミス。＋5秒ペナルティと併せて 7
+   ・係数バランス／組み立てラボ … 総当たりは時間がかかり good タイムにならない
+     ので、明らかな乱打だけを弾く緩めの値 */
 MODE_CONFIG[MODES.FORMULA_BASIC] = {
   title: "化学式マッチ（基本）",
   shortLabel: "化学式・き",
   questions: 20,
+  maxMiss: 12,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
@@ -86,6 +96,7 @@ MODE_CONFIG[MODES.FORMULA_CHALLENGE] = {
   title: "化学式マッチ（チャレンジ）",
   shortLabel: "化学式・チ",
   questions: 20,
+  maxMiss: 12,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
@@ -93,6 +104,7 @@ MODE_CONFIG[MODES.COEFF_BASIC] = {
   title: "係数バランス（基本）",
   shortLabel: "係数・き",
   questions: 10,
+  maxMiss: 15,
   grades: { ss: 50, s: 85, a: 135, b: 200 },
   masterTitle: "バランスマスター!!",
 };
@@ -100,6 +112,7 @@ MODE_CONFIG[MODES.COEFF_CHALLENGE] = {
   title: "係数バランス（チャレンジ）",
   shortLabel: "係数・チ",
   questions: 10,
+  maxMiss: 15,
   grades: { ss: 90, s: 150, a: 240, b: 350 },
   masterTitle: "バランスマスター!!",
 };
@@ -107,6 +120,7 @@ MODE_CONFIG[MODES.JUDGE] = {
   title: "○×ジャッジ",
   shortLabel: "○×",
   questions: 20,
+  maxMiss: 7,
   grades: { ss: 28, s: 42, a: 65, b: 95 },
   masterTitle: "ジャッジマスター!!",
 };
@@ -114,6 +128,7 @@ MODE_CONFIG[MODES.BUILD] = {
   title: "組み立てラボ",
   shortLabel: "組み立て",
   questions: 5,
+  maxMiss: 10,
   grades: { ss: 110, s: 185, a: 280, b: 400 },
   masterTitle: "反応式マスター!!",
 };
@@ -852,7 +867,10 @@ function HelpModal(props) {
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
             <li>・ミスしても続行できるが、その分タイムを消費する。</li>
             <li>・結果画面の「復習」で、間違えた問題だけやり直せる。</li>
-            <li>・ベスト記録はこの端末に保存される。</li>
+            <li>
+              ・ベスト記録はこの端末に保存される。ただしミスが多すぎる回は
+              記録されない（あてずっぽう対策）。
+            </li>
             <li>・連続正解でコンボ🔥が伸びる。ノーミスを狙おう。</li>
             <li>・正解表示中はタイマーが停止。落ち着いて式を確認できる。</li>
             <li>・効果音はホーム右上のボタンで ON にできる（初期設定は OFF）。</li>
@@ -1115,6 +1133,9 @@ export default function App() {
   const totalPausedMsRef = useRef(0);
 
   const missedRef = useRef({});
+  // finishRun は setTimeout の中から呼ばれるので、state だと最後の1問の
+  // ミスが反映される前の値を掴んでしまう。判定用に ref でも持っておく
+  const wrongTapsRef = useRef(0);
   const [wrongTaps, setWrongTaps] = useState(0);
 
   // 連続正解コンボ
@@ -1324,6 +1345,7 @@ export default function App() {
     missedRef.current = {};
     penaltyRef.current = 0;
     setPenaltySec(0);
+    wrongTapsRef.current = 0;
     setWrongTaps(0);
     streakRef.current = 0;
     maxStreakRef.current = 0;
@@ -1357,9 +1379,8 @@ export default function App() {
 
   function markMissed() {
     missedRef.current[qIndexRef.current] = true;
-    setWrongTaps(function (w) {
-      return w + 1;
-    });
+    wrongTapsRef.current += 1;
+    setWrongTaps(wrongTapsRef.current);
     streakRef.current = 0;
     setStreak(0);
     playWrong();
@@ -1387,10 +1408,13 @@ export default function App() {
     for (let i = 0; i < qs.length; i++) {
       if (missedRef.current[i]) missedQuestions.push(qs[i]);
     }
+    // ミスが多すぎる回は記録を残さない（でたらめなタップ対策）
+    const missCount = wrongTapsRef.current;
+    const tooManyMisses = missCount > MODE_CONFIG[mode].maxMiss;
     let isNewBest = false;
     const prevUnlocked = isSecretUnlocked(bestByMode);
     let nowUnlocked = prevUnlocked;
-    if (phase === "main") {
+    if (phase === "main" && !tooManyMisses) {
       const prev = bestByMode[mode];
       if (!prev || sec < prev.sec) {
         isNewBest = true;
@@ -1415,6 +1439,8 @@ export default function App() {
       isNewBest: isNewBest,
       unlockedSecret: unlockedSecret,
       maxStreak: maxStreakRef.current,
+      wrongTaps: missCount,
+      tooManyMisses: tooManyMisses,
     });
     playFinish();
     if (unlockedSecret) playUnlock(600);
@@ -1493,7 +1519,7 @@ export default function App() {
           </span>
         ),
       });
-      scheduleAdvance(550);
+      scheduleAdvance(750);
     } else {
       markMissed();
       setOptFlash({ idx: idx, kind: "wrong" });
@@ -1699,7 +1725,7 @@ export default function App() {
         sub: q.eq.desc,
         node: <EquationStatic eq={q.eq} leftCoeffs={l} rightCoeffs={r} />,
       });
-      scheduleAdvance(1000);
+      scheduleAdvance(1300);
     } else if (res.balanced && !res.simplest) {
       playInfo();
       showToast("つり合っているが、もっと簡単な整数比にできる");
@@ -1889,7 +1915,7 @@ export default function App() {
         sub: q.eq.desc,
         node: <EquationStatic eq={q.eq} />,
       });
-      scheduleAdvance(1100);
+      scheduleAdvance(1400);
     } else {
       // つり合ってはいるが最簡でないだけなら、係数バランスと同じく
       // ミス扱いにせず「もっと簡単な整数比に」と促すだけにする
@@ -1924,7 +1950,7 @@ export default function App() {
       onSolved();
       if (q.correct) {
         setOverlay({ kind: "correct", title: "正解！", sub: "つり合っている" });
-        scheduleAdvance(450);
+        scheduleAdvance(650);
       } else {
         setOverlay({
           kind: "correct",
@@ -1932,7 +1958,7 @@ export default function App() {
           sub: "正しくは：",
           node: <EquationStatic eq={q.eq} />,
         });
-        scheduleAdvance(900);
+        scheduleAdvance(1150);
       }
     } else {
       markMissed();
@@ -2526,7 +2552,9 @@ export default function App() {
     const gr = gradeFor(lastResult.mode, lastResult.sec);
     const missed = lastResult.missedQuestions;
     const next = lastResult.phase === "main" ? nextRankInfo(lastResult.mode, lastResult.sec) : null;
-    const noMiss = wrongTaps === 0;
+    // ミス数は lastResult（確定値）から読む
+    const missCount = coalesce(lastResult.wrongTaps, wrongTaps);
+    const noMiss = missCount === 0;
     // 復習は問題数も評価基準も本番と違うため、グレード用の見出し・講評は使わない
     const isReview = lastResult.phase === "review";
     const headline = isReview ? "復習おつかれさま" : gr.title;
@@ -2585,6 +2613,14 @@ export default function App() {
               </span>
             </div>
           ) : null}
+          {lastResult.tooManyMisses ? (
+            <div className="mx-auto mt-4 max-w-sm rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-xs font-bold leading-relaxed text-amber-200">
+              ミスが {MODE_CONFIG[lastResult.mode].maxMiss} 回を超えたため、
+              今回の記録は保存されません。
+              <br />
+              あてずっぽうではなく、1問ずつ確実に答えてみよう。
+            </div>
+          ) : null}
           {lastResult.unlockedSecret ? (
             <div className="mt-4 rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-violet-500/20 px-4 py-4 animate-popin">
               <div className="text-xl font-bold text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.5)]">
@@ -2597,7 +2633,7 @@ export default function App() {
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            ミス：{wrongTaps} 回 ／ 最大コンボ：
+            ミス：{missCount} 回 ／ 最大コンボ：
             {coalesce(lastResult.maxStreak, 0)}
           </div>
         </div>
