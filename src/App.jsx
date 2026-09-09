@@ -83,12 +83,17 @@ const MODE_CONFIG = {};
      4択ランダムだと20問で平均30ミスになるため 12 で確実に弾ける
    ・○×ジャッジ … 2択でランダムだと平均10ミス。＋5秒ペナルティと併せて 7
    ・係数バランス／組み立てラボ … 総当たりは時間がかかり good タイムにならない
-     ので、明らかな乱打だけを弾く緩めの値 */
+     ので、明らかな乱打だけを弾く緩めの値
+
+   skipPenalty: 「わからない」でスキップしたときに加算される秒数。
+   S ランクの1問あたりの持ち時間のおよそ1.5倍にしてあり、
+   「解くよりスキップのほうが速い」状態にはならないようにしている */
 MODE_CONFIG[MODES.FORMULA_BASIC] = {
   title: "化学式マッチ（基本）",
   shortLabel: "化学式・き",
   questions: 20,
   maxMiss: 12,
+  skipPenalty: 6,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
@@ -97,6 +102,7 @@ MODE_CONFIG[MODES.FORMULA_CHALLENGE] = {
   shortLabel: "化学式・チ",
   questions: 20,
   maxMiss: 12,
+  skipPenalty: 6,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
 };
@@ -105,6 +111,7 @@ MODE_CONFIG[MODES.COEFF_BASIC] = {
   shortLabel: "係数・き",
   questions: 10,
   maxMiss: 15,
+  skipPenalty: 12,
   grades: { ss: 50, s: 85, a: 135, b: 200 },
   masterTitle: "バランスマスター!!",
 };
@@ -113,6 +120,7 @@ MODE_CONFIG[MODES.COEFF_CHALLENGE] = {
   shortLabel: "係数・チ",
   questions: 10,
   maxMiss: 15,
+  skipPenalty: 20,
   grades: { ss: 90, s: 150, a: 240, b: 350 },
   masterTitle: "バランスマスター!!",
 };
@@ -121,6 +129,7 @@ MODE_CONFIG[MODES.JUDGE] = {
   shortLabel: "○×",
   questions: 20,
   maxMiss: 7,
+  skipPenalty: 5,
   grades: { ss: 28, s: 42, a: 65, b: 95 },
   masterTitle: "ジャッジマスター!!",
 };
@@ -129,6 +138,7 @@ MODE_CONFIG[MODES.BUILD] = {
   shortLabel: "組み立て",
   questions: 5,
   maxMiss: 10,
+  skipPenalty: 45,
   grades: { ss: 110, s: 185, a: 280, b: 400 },
   masterTitle: "反応式マスター!!",
 };
@@ -866,6 +876,11 @@ function HelpModal(props) {
           <ul className="space-y-1 pl-1 text-xs text-white/65">
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
             <li>・ミスしても続行できるが、その分タイムを消費する。</li>
+            <li>
+              ・わからないときは画面下の「わからない」で答えを見てスキップできる
+              （2度押しで確定。タイムにペナルティが加算され、ミスとして
+              復習リストに入る）。
+            </li>
             <li>・結果画面の「復習」で、間違えた問題だけやり直せる。</li>
             <li>
               ・ベスト記録はこの端末に保存される。ただしミスが多すぎる回は
@@ -1175,6 +1190,11 @@ export default function App() {
   const shakeTimerRef = useRef(null);
   const [checkLock, setCheckLock] = useState(false);
 
+  // 「わからない」ボタン。誤タップで大きなペナルティを取られないよう、
+  // 1回目のタップでは確認状態にするだけにする（一定時間で自動解除）
+  const [skipArmed, setSkipArmed] = useState(false);
+  const skipTimerRef = useRef(null);
+
   const [lastResult, setLastResult] = useState(null);
   const [bestByMode, setBestByMode] = useState({});
   const [showHelp, setShowHelp] = useState(false);
@@ -1202,6 +1222,7 @@ export default function App() {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+      if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
     };
   }, []);
 
@@ -1291,6 +1312,10 @@ export default function App() {
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
     }
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = null;
+    }
   }
 
   function resetQuestionState(q) {
@@ -1299,6 +1324,7 @@ export default function App() {
     setHintOn(false);
     setBadPos({});
     setCheckLock(false);
+    setSkipArmed(false);
     setOverlay(null);
     if (q && q.kind === "coeff") {
       // 印字済みの係数はそのまま入り、空欄（null）だけ入力対象になる
@@ -1377,13 +1403,14 @@ export default function App() {
     startRun(lastResult.mode, "review", shuffle(qs));
   }
 
-  function markMissed() {
+  /** 誤答・スキップの記録。quiet=true のときはミスの効果音を鳴らさない */
+  function markMissed(quiet) {
     missedRef.current[qIndexRef.current] = true;
     wrongTapsRef.current += 1;
     setWrongTaps(wrongTapsRef.current);
     streakRef.current = 0;
     setStreak(0);
-    playWrong();
+    if (!quiet) playWrong();
   }
 
   /** 1問解けた（正解イベント）。ノーミスの問題だけコンボが続く */
@@ -1491,6 +1518,69 @@ export default function App() {
     toastTimerRef.current = setTimeout(function () {
       setToast(null);
     }, 1600);
+  }
+
+  /* ---------- わからない（スキップ） ---------- */
+
+  /** スキップしたときに見せる「答え」 */
+  function skipAnswerNode(q) {
+    if (q.kind === "formula") {
+      return (
+        <span className="inline-flex flex-wrap items-baseline justify-center gap-2">
+          <span className="text-lg font-bold text-white/80">{q.sub.name}</span>
+          <span className="text-white/40">＝</span>
+          <FormulaText formula={q.sub.f} className="text-2xl font-extrabold" />
+        </span>
+      );
+    }
+    return <EquationStatic eq={q.eq} />;
+  }
+
+  function skipAnswerSub(q) {
+    if (q.kind === "formula") {
+      return q.dir === "n2f" ? "この物質の化学式" : "この化学式の物質名";
+    }
+    if (q.kind === "judge") {
+      return q.correct ? "表示されていた式は正しかった" : "正しくは：";
+    }
+    return q.eq.desc;
+  }
+
+  function onSkip() {
+    const q = questionsRef.current[qIndexRef.current];
+    if (!q) return;
+    if (overlay || checkLock) return;
+    // 1回目のタップは「確認」。iPad で誤って触れてもペナルティにならない
+    if (!skipArmed) {
+      setSkipArmed(true);
+      if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = setTimeout(function () {
+        setSkipArmed(false);
+        skipTimerRef.current = null;
+      }, 3000);
+      return;
+    }
+    if (skipTimerRef.current) {
+      clearTimeout(skipTimerRef.current);
+      skipTimerRef.current = null;
+    }
+    setSkipArmed(false);
+    const penalty = MODE_CONFIG[mode].skipPenalty;
+    penaltyRef.current += penalty;
+    setPenaltySec(penaltyRef.current);
+    // ミス扱い（復習リストに入り、記録の乱打判定にも数える）。
+    // ただし自分から選んだ操作なので、ミスの効果音は鳴らさない
+    markMissed(true);
+    playInfo();
+    setCheckLock(true);
+    pauseTimer();
+    setOverlay({
+      kind: "info",
+      title: "スキップ（＋" + penalty + "秒）",
+      sub: skipAnswerSub(q),
+      node: skipAnswerNode(q),
+    });
+    scheduleAdvance(2000);
   }
 
   /* ---------- 化学式マッチ ---------- */
@@ -2482,6 +2572,37 @@ export default function App() {
     );
   }
 
+  /* ----- わからない（スキップ）ボタン ----- */
+
+  /* どのモードでも解答エリアのいちばん下に置く。位置を固定しておくと、
+     問題の種類が変わっても探さずに済む。誤タップ防止のため2度押し式 */
+  function renderSkipButton() {
+    const penalty = MODE_CONFIG[mode].skipPenalty;
+    const disabled = !!overlay || checkLock;
+    let tone =
+      "border-white/10 bg-white/[0.04] text-white/50 hover:bg-white/10 hover:text-white/80";
+    if (disabled) tone = "border-white/5 bg-white/[0.03] text-white/20";
+    else if (skipArmed)
+      tone = "border-amber-300/50 bg-amber-500/20 text-amber-100";
+    return (
+      <div className="mx-auto mt-6 w-full max-w-md">
+        <button
+          type="button"
+          onClick={onSkip}
+          disabled={disabled}
+          className={
+            "flex min-h-[46px] w-full items-center justify-center rounded-2xl border px-4 text-sm font-bold transition active:scale-[0.99] " +
+            tone
+          }
+        >
+          {skipArmed
+            ? "もう一度タップでスキップ（＋" + penalty + "秒）"
+            : "わからない（スキップ ＋" + penalty + "秒）"}
+        </button>
+      </div>
+    );
+  }
+
   /* ----- 実行画面 ----- */
 
   function renderRun() {
@@ -2496,6 +2617,7 @@ export default function App() {
         {renderHeader()}
         {renderProgressBar()}
         {body}
+        {renderSkipButton()}
       </div>
     );
   }
@@ -2615,8 +2737,8 @@ export default function App() {
           ) : null}
           {lastResult.tooManyMisses ? (
             <div className="mx-auto mt-4 max-w-sm rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-xs font-bold leading-relaxed text-amber-200">
-              ミスが {MODE_CONFIG[lastResult.mode].maxMiss} 回を超えたため、
-              今回の記録は保存されません。
+              ミス・スキップの合計が {MODE_CONFIG[lastResult.mode].maxMiss}{" "}
+              回を超えたため、今回の記録は保存されません。
               <br />
               あてずっぽうではなく、1問ずつ確実に答えてみよう。
             </div>
@@ -2633,7 +2755,7 @@ export default function App() {
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            ミス：{missCount} 回 ／ 最大コンボ：
+            ミス・スキップ：{missCount} 回 ／ 最大コンボ：
             {coalesce(lastResult.maxStreak, 0)}
           </div>
         </div>
