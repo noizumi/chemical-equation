@@ -131,6 +131,33 @@ if (chalEq < 10) fail("係数バランス（チャレンジ）の反応式が 10
 if (jd < 20) fail("○×ジャッジの反応式が 20 未満");
 if (bd < 5) fail("組み立ての反応式が 5 未満");
 
+// 係数バランス（基本）は後半5問を空欄2カ所で出題する。
+// 印字済みの係数が必ず1つは残るよう、係数スロットが3つ以上必要
+for (const e of equationsByLevel(1)) {
+  const slots = e.left.length + e.right.length;
+  if (slots < 3) {
+    fail(
+      e.id + " は係数スロットが " + slots + " 個しかなく、" +
+        "係数バランス（基本）の空欄2カ所で手がかりが残らない"
+    );
+  }
+}
+
+// 出題される答えの偏りを見る（「2 を連打すれば通る」状態になっていないか）
+const valueTally = {};
+for (const e of equationsByLevel(1)) {
+  for (const t of e.left.concat(e.right)) {
+    valueTally[t.coeff] = (valueTally[t.coeff] || 0) + 1;
+  }
+}
+console.log(
+  "係数バランス（基本）の係数の内訳: " +
+    Object.keys(valueTally)
+      .sort()
+      .map((k) => k + "が" + valueTally[k])
+      .join(" / ")
+);
+
 if (errors > 0) {
   console.error("\n" + errors + " 件のエラー");
   process.exit(1);

@@ -76,23 +76,35 @@ const MODE_CONFIG = {};
 /* グレード基準タイム（秒）
    正解演出中はタイマーが止まるため、純粋な解答時間で評価される
 
-   maxMiss: これを超えるミスをした回は記録を残さない（でたらめなタップで
+   maxMiss: これを超える誤答をした回は記録を残さない（でたらめなタップで
    ベスト記録や裏モード解放を取られるのを防ぐ）。当てずっぽうで突破できる
    モードほど厳しくしている：
    ・化学式マッチ … 誤答した選択肢が消えるので当てずっぽうでも必ず正解できる。
      4択ランダムだと20問で平均30ミスになるため 12 で確実に弾ける
    ・○×ジャッジ … 2択でランダムだと平均10ミス。＋5秒ペナルティと併せて 7
-   ・係数バランス／組み立てラボ … 総当たりは時間がかかり good タイムにならない
-     ので、明らかな乱打だけを弾く緩めの値
+   ・係数バランス基本 … 中学範囲の係数は 1 と 2 でほぼ占められており（基本17式
+     で 1が36・2が16・3と4が各1）、空欄1カ所だと答えが実質2択になる。
+     「2」を連打するだけで通ってしまわないよう、後半を空欄2カ所にしたうえで
+     10問中3ミスまでに絞る
+   ・係数バランス チャレンジ／組み立てラボ … 係数が全部1の反応式が
+     42式中16式（組み立て対象は22式中11式）あるため、「全部1」を入れて
+     判定するだけで4〜5割は当たってしまう。この探りを弾ける値にする
+
+   maxSkip: 「わからない」でスキップできる回数の上限。誤答とは別枠にして、
+   正直にスキップした回が誤答扱いで記録から外れないようにしている
 
    skipPenalty: 「わからない」でスキップしたときに加算される秒数。
    S ランクの1問あたりの持ち時間のおよそ1.5倍にしてあり、
-   「解くよりスキップのほうが速い」状態にはならないようにしている */
+   「解くよりスキップのほうが速い」状態にはならないようにしている
+
+   recordVersion: 出題内容を変えて過去のベスト記録と比べられなくなったときに
+   上げる。保存キーが変わり、そのモードの記録だけがリセットされる */
 MODE_CONFIG[MODES.FORMULA_BASIC] = {
   title: "化学式マッチ（基本）",
   shortLabel: "化学式・き",
   questions: 20,
   maxMiss: 12,
+  maxSkip: 6,
   skipPenalty: 6,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
@@ -102,6 +114,7 @@ MODE_CONFIG[MODES.FORMULA_CHALLENGE] = {
   shortLabel: "化学式・チ",
   questions: 20,
   maxMiss: 12,
+  maxSkip: 6,
   skipPenalty: 6,
   grades: { ss: 35, s: 65, a: 100, b: 145 },
   masterTitle: "化学式マスター!!",
@@ -110,16 +123,20 @@ MODE_CONFIG[MODES.COEFF_BASIC] = {
   title: "係数バランス（基本）",
   shortLabel: "係数・き",
   questions: 10,
-  maxMiss: 15,
-  skipPenalty: 12,
-  grades: { ss: 50, s: 85, a: 135, b: 200 },
+  maxMiss: 3,
+  maxSkip: 3,
+  skipPenalty: 15,
+  // 後半5問が空欄2カ所になったぶん、基準タイムを引き上げている
+  grades: { ss: 65, s: 105, a: 160, b: 235 },
+  recordVersion: 2,
   masterTitle: "バランスマスター!!",
 };
 MODE_CONFIG[MODES.COEFF_CHALLENGE] = {
   title: "係数バランス（チャレンジ）",
   shortLabel: "係数・チ",
   questions: 10,
-  maxMiss: 15,
+  maxMiss: 5,
+  maxSkip: 3,
   skipPenalty: 20,
   grades: { ss: 90, s: 150, a: 240, b: 350 },
   masterTitle: "バランスマスター!!",
@@ -129,6 +146,7 @@ MODE_CONFIG[MODES.JUDGE] = {
   shortLabel: "○×",
   questions: 20,
   maxMiss: 7,
+  maxSkip: 6,
   skipPenalty: 5,
   grades: { ss: 28, s: 42, a: 65, b: 95 },
   masterTitle: "ジャッジマスター!!",
@@ -137,7 +155,8 @@ MODE_CONFIG[MODES.BUILD] = {
   title: "組み立てラボ",
   shortLabel: "組み立て",
   questions: 5,
-  maxMiss: 10,
+  maxMiss: 3,
+  maxSkip: 2,
   skipPenalty: 45,
   grades: { ss: 110, s: 185, a: 280, b: 400 },
   masterTitle: "反応式マスター!!",
@@ -207,7 +226,12 @@ function gradeFor(mode, sec) {
 /* ================= ベスト記録（端末に保存） ================= */
 
 function bestStorageKey(mode) {
-  return "chemeq_best_v1_" + String(mode);
+  // 出題内容を変えたモードは recordVersion を上げてキーを分ける。
+  // 難度が変わった前後のタイムを同じベスト記録として扱わないため
+  const cfg = MODE_CONFIG[mode];
+  const ver = cfg && cfg.recordVersion ? cfg.recordVersion : 1;
+  const suffix = ver > 1 ? "_r" + String(ver) : "";
+  return "chemeq_best_v1_" + String(mode) + suffix;
 }
 
 function readBestRecord(mode) {
@@ -534,37 +558,85 @@ function makeFormulaQuestions(level) {
   });
 }
 
+/** 反応式の係数スロット一覧 */
+function coeffSlots(eq) {
+  const slots = [];
+  for (let i = 0; i < eq.left.length; i++) {
+    slots.push({ side: "L", idx: i, coeff: eq.left[i].coeff });
+  }
+  for (let i = 0; i < eq.right.length; i++) {
+    slots.push({ side: "R", idx: i, coeff: eq.right[i].coeff });
+  }
+  return slots;
+}
+
+/**
+ * 空欄にするスロットを選ぶ（係数バランス・基本）
+ *
+ * 以前は「係数2以上の場所を優先」していたが、中学範囲の係数は 1 と 2 で
+ * ほぼ占められているため、答えが「2」に偏り（52.9%）、数字の 2 を連打する
+ * だけで半分以上正解できてしまっていた。
+ * ここでは1セット（10問）の中で答えの数字が散らばるように、
+ * まだ出ていない値を優先して選ぶ。
+ * 印字済みの係数が必ず1つは残るようにして、手がかりゼロにはしない。
+ */
+function pickBlankSlots(eq, want, valueUse) {
+  const rest = coeffSlots(eq);
+  const take = Math.max(1, Math.min(want, rest.length - 1));
+  const chosen = [];
+  for (let n = 0; n < take; n++) {
+    // スロット単位で選ぶと、係数1のスロットが多い式が多いぶん答えが1に偏る。
+    // まず「値」の種類の中からいちばん出ていないものを選び、
+    // そのあとで該当スロットを引く
+    const values = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (values.indexOf(rest[i].coeff) < 0) values.push(rest[i].coeff);
+    }
+    const order = shuffle(values); // 同数のときはランダムに
+    let pick = order[0];
+    for (let i = 1; i < order.length; i++) {
+      if (coalesce(valueUse[order[i]], 0) < coalesce(valueUse[pick], 0)) {
+        pick = order[i];
+      }
+    }
+    const cand = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].coeff === pick) cand.push(i);
+    }
+    const slot = rest.splice(cand[randInt(0, cand.length - 1)], 1)[0];
+    valueUse[pick] = coalesce(valueUse[pick], 0) + 1;
+    chosen.push(slot);
+  }
+  return chosen;
+}
+
 /**
  * 係数バランスの出題
- * - 基本（level 1）: 空欄は1カ所だけ。残りの係数は印字済み（中2の式から出題）
+ * - 基本（level 1）: 中2の式から。前半5問は空欄1カ所、後半5問は2カ所。
+ *   1カ所だけだと答えが実質2択（1 か 2）になり当てずっぽうが通るため、
+ *   後半で組み合わせを 36 通りに広げて総当たりを成立させなくしている
  * - チャレンジ（level 2）: すべての係数を入力（全反応式から出題）
  * givenL / givenR: 印字済みの係数（null の場所が空欄）
  */
 function makeCoeffQuestions(level) {
   const pool = level === 1 ? equationsByLevel(1) : EQUATIONS;
-  return sampleN(pool, 10).map(function (eq) {
+  const valueUse = {};
+  return sampleN(pool, 10).map(function (eq, qi) {
     let givenL;
     let givenR;
     if (level === 1) {
-      // 空欄にする場所を1つ選ぶ（係数2以上の場所を優先。全部1の式はどこでも）
-      const slots = [];
-      for (let i = 0; i < eq.left.length; i++) {
-        slots.push({ side: "L", idx: i, coeff: eq.left[i].coeff });
-      }
-      for (let i = 0; i < eq.right.length; i++) {
-        slots.push({ side: "R", idx: i, coeff: eq.right[i].coeff });
-      }
-      let candidates = [];
-      for (let i = 0; i < slots.length; i++) {
-        if (slots[i].coeff > 1) candidates.push(slots[i]);
-      }
-      if (candidates.length === 0) candidates = slots;
-      const blank = candidates[randInt(0, candidates.length - 1)];
+      const blanks = pickBlankSlots(eq, qi < 5 ? 1 : 2, valueUse);
+      const isBlank = function (side, idx) {
+        for (let i = 0; i < blanks.length; i++) {
+          if (blanks[i].side === side && blanks[i].idx === idx) return true;
+        }
+        return false;
+      };
       givenL = eq.left.map(function (t, i) {
-        return blank.side === "L" && blank.idx === i ? null : t.coeff;
+        return isBlank("L", i) ? null : t.coeff;
       });
       givenR = eq.right.map(function (t, i) {
-        return blank.side === "R" && blank.idx === i ? null : t.coeff;
+        return isBlank("R", i) ? null : t.coeff;
       });
     } else {
       givenL = eq.left.map(function () {
@@ -849,9 +921,11 @@ function HelpModal(props) {
             <div className="font-bold text-violet-200">STEP2 係数バランス</div>
             <div className="mt-1">
               ▢に数字を入れて左右の原子数をそろえる。
-              <span className="font-bold">基本は空欄1カ所</span>
-              （他の係数は印字済み）で、入力した時点で判定される。
-              チャレンジは全係数を入力し、「判定する」で答え合わせ。
+              基本は<span className="font-bold">前半5問が空欄1カ所</span>
+              （入力した時点で判定される）、
+              <span className="font-bold">後半5問が空欄2カ所</span>
+              （「判定する」で答え合わせ）。
+              チャレンジは全係数を入力する。
               入力をやり直すときは「クリア」で全欄を一度に消せる。
               係数は<span className="font-bold">最も簡単な整数比</span>で、
               通常は書かない「1」もこのゲームでは入力する。
@@ -875,7 +949,11 @@ function HelpModal(props) {
           </div>
           <ul className="space-y-1 pl-1 text-xs text-white/65">
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
-            <li>・ミスしても続行できるが、その分タイムを消費する。</li>
+            <li>
+              ・ミスしても続行できるが、その分タイムを消費する。係数の誤答の
+              あとは少しのあいだ数字キーが止まるので、原子数チェックを見て
+              から入れ直そう。
+            </li>
             <li>
               ・わからないときは画面いちばん下の「わからない」で答えを見て
               スキップできる（2度押しで確定。タイムにペナルティが加算され、
@@ -883,8 +961,8 @@ function HelpModal(props) {
             </li>
             <li>・結果画面の「復習」で、間違えた問題だけやり直せる。</li>
             <li>
-              ・ベスト記録はこの端末に保存される。ただしミスが多すぎる回は
-              記録されない（あてずっぽう対策）。
+              ・ベスト記録はこの端末に保存される。ただし誤答やスキップが
+              多すぎる回は記録されない（あてずっぽう対策）。
             </li>
             <li>・連続正解でコンボ🔥が伸びる。ノーミスを狙おう。</li>
             <li>・正解表示中はタイマーが停止。落ち着いて式を確認できる。</li>
@@ -1152,6 +1230,8 @@ export default function App() {
   // ミスが反映される前の値を掴んでしまう。判定用に ref でも持っておく
   const wrongTapsRef = useRef(0);
   const [wrongTaps, setWrongTaps] = useState(0);
+  // スキップは誤答とは別に数える（正直にスキップした回を誤答扱いにしないため）
+  const skipsRef = useRef(0);
 
   // 連続正解コンボ
   const streakRef = useRef(0);
@@ -1195,6 +1275,11 @@ export default function App() {
   const [skipArmed, setSkipArmed] = useState(false);
   const skipTimerRef = useRef(null);
 
+  // 誤答の直後に数字キーを少しのあいだ止める。
+  // 連打での総当たりを成立させないためと、原子数チェックを目に入れさせるため
+  const [inputLock, setInputLock] = useState(false);
+  const inputLockTimerRef = useRef(null);
+
   const [lastResult, setLastResult] = useState(null);
   const [bestByMode, setBestByMode] = useState({});
   const [showHelp, setShowHelp] = useState(false);
@@ -1223,6 +1308,7 @@ export default function App() {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+      if (inputLockTimerRef.current) clearTimeout(inputLockTimerRef.current);
     };
   }, []);
 
@@ -1316,6 +1402,10 @@ export default function App() {
       clearTimeout(skipTimerRef.current);
       skipTimerRef.current = null;
     }
+    if (inputLockTimerRef.current) {
+      clearTimeout(inputLockTimerRef.current);
+      inputLockTimerRef.current = null;
+    }
   }
 
   function resetQuestionState(q) {
@@ -1325,6 +1415,7 @@ export default function App() {
     setBadPos({});
     setCheckLock(false);
     setSkipArmed(false);
+    setInputLock(false);
     setOverlay(null);
     if (q && q.kind === "coeff") {
       // 印字済みの係数はそのまま入り、空欄（null）だけ入力対象になる
@@ -1373,6 +1464,7 @@ export default function App() {
     setPenaltySec(0);
     wrongTapsRef.current = 0;
     setWrongTaps(0);
+    skipsRef.current = 0;
     streakRef.current = 0;
     maxStreakRef.current = 0;
     setStreak(0);
@@ -1403,14 +1495,35 @@ export default function App() {
     startRun(lastResult.mode, "review", shuffle(qs));
   }
 
-  /** 誤答・スキップの記録。quiet=true のときはミスの効果音を鳴らさない */
-  function markMissed(quiet) {
+  /** この問題を「間違えた問題」として記録し、コンボを切る */
+  function markQuestionMissed() {
     missedRef.current[qIndexRef.current] = true;
-    wrongTapsRef.current += 1;
-    setWrongTaps(wrongTapsRef.current);
     streakRef.current = 0;
     setStreak(0);
-    if (!quiet) playWrong();
+  }
+
+  /** 誤答の記録 */
+  function markMissed() {
+    markQuestionMissed();
+    wrongTapsRef.current += 1;
+    setWrongTaps(wrongTapsRef.current);
+    playWrong();
+  }
+
+  /** スキップの記録。復習リストには入るが、誤答の回数には数えない */
+  function markSkipped() {
+    markQuestionMissed();
+    skipsRef.current += 1;
+  }
+
+  /** 誤答の直後だけ数字キーを止める（総当たり対策・ヒントを見せるため） */
+  function lockInputBriefly() {
+    setInputLock(true);
+    if (inputLockTimerRef.current) clearTimeout(inputLockTimerRef.current);
+    inputLockTimerRef.current = setTimeout(function () {
+      setInputLock(false);
+      inputLockTimerRef.current = null;
+    }, 1200);
   }
 
   /** 1問解けた（正解イベント）。ノーミスの問題だけコンボが続く */
@@ -1435,13 +1548,18 @@ export default function App() {
     for (let i = 0; i < qs.length; i++) {
       if (missedRef.current[i]) missedQuestions.push(qs[i]);
     }
-    // ミスが多すぎる回は記録を残さない（でたらめなタップ対策）
+    // 誤答・スキップが多すぎる回は記録を残さない（でたらめなタップ対策）。
+    // 誤答とスキップは上限を分けて数える
+    const cfg = MODE_CONFIG[mode];
     const missCount = wrongTapsRef.current;
-    const tooManyMisses = missCount > MODE_CONFIG[mode].maxMiss;
+    const skipCount = skipsRef.current;
+    const tooManyMisses = missCount > cfg.maxMiss;
+    const tooManySkips = skipCount > cfg.maxSkip;
+    const noRecord = tooManyMisses || tooManySkips;
     let isNewBest = false;
     const prevUnlocked = isSecretUnlocked(bestByMode);
     let nowUnlocked = prevUnlocked;
-    if (phase === "main" && !tooManyMisses) {
+    if (phase === "main" && !noRecord) {
       const prev = bestByMode[mode];
       if (!prev || sec < prev.sec) {
         isNewBest = true;
@@ -1467,7 +1585,9 @@ export default function App() {
       unlockedSecret: unlockedSecret,
       maxStreak: maxStreakRef.current,
       wrongTaps: missCount,
+      skips: skipCount,
       tooManyMisses: tooManyMisses,
+      tooManySkips: tooManySkips,
     });
     playFinish();
     if (unlockedSecret) playUnlock(600);
@@ -1568,9 +1688,9 @@ export default function App() {
     const penalty = MODE_CONFIG[mode].skipPenalty;
     penaltyRef.current += penalty;
     setPenaltySec(penaltyRef.current);
-    // ミス扱い（復習リストに入り、記録の乱打判定にも数える）。
-    // ただし自分から選んだ操作なので、ミスの効果音は鳴らさない
-    markMissed(true);
+    // 復習リストには入れるが、誤答の回数とは別枠で数える。
+    // 自分から選んだ操作なので、ミスの効果音も鳴らさない
+    markSkipped();
     playInfo();
     setCheckLock(true);
     pauseTimer();
@@ -1697,7 +1817,7 @@ export default function App() {
   function onTapNumber(n) {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
-    if (overlay || checkLock) return;
+    if (overlay || checkLock || inputLock) return;
     // 組み立てモードは物質をすべて並べてから係数を入力する
     if (q.kind === "build" && !allSubsFilled(q)) return;
     if (!isEditableCoeffSlot(q, selPos.side, selPos.idx)) return;
@@ -1781,7 +1901,7 @@ export default function App() {
   function onClearCoeffs() {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
-    if (overlay || checkLock) return;
+    if (overlay || checkLock || inputLock) return;
     let sel = null;
     if (q.kind === "coeff") {
       setCoeffL(q.givenL.slice());
@@ -1824,13 +1944,14 @@ export default function App() {
       markMissed();
       setHintOn(true);
       triggerShake();
+      lockInputBriefly();
     }
   }
 
   function onCheckCoeff() {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || q.kind !== "coeff") return;
-    if (overlay || checkLock) return;
+    if (overlay || checkLock || inputLock) return;
     if (!allCoeffFilled(q)) return;
     runCoeffCheck(q, coeffL, coeffR);
   }
@@ -1947,7 +2068,7 @@ export default function App() {
   function onCheckBuild() {
     const q = questionsRef.current[qIndexRef.current];
     if (!q || q.kind !== "build") return;
-    if (overlay || checkLock) return;
+    if (overlay || checkLock || inputLock) return;
     if (!allSubsFilled(q) || !allCoeffFilled(q)) return;
 
     // 1) 物質の組み合わせを判定（左右それぞれ、順序は不問）
@@ -2023,6 +2144,7 @@ export default function App() {
         markMissed();
         setHintOn(true);
         triggerShake();
+        lockInputBriefly();
       }
     }
   }
@@ -2357,18 +2479,27 @@ export default function App() {
             <AtomHintPanel eq={q.eq} leftCoeffs={coeffL} rightCoeffs={coeffR} />
           ) : null}
         </div>
-        <div className="mt-2 text-center text-[11px] font-bold text-white/45">
-          {blankCount === 1
+        <div
+          className={
+            "mt-2 text-center text-[11px] font-bold " +
+            (inputLock ? "text-amber-200/80" : "text-white/45")
+          }
+        >
+          {inputLock
+            ? "左右の原子の数を確かめよう…"
+            : blankCount === 1
             ? "▢に入る係数を入力すると、その場で判定される（1 が入るときも「1」）"
             : "マスを選んで数字をタップ（係数 1 も入力する）"}
         </div>
         {renderNumberPad({
           checkFn: onCheckCoeff,
-          checkEnabled: allCoeffFilled(q) && !overlay && !checkLock,
+          checkEnabled: allCoeffFilled(q) && !overlay && !checkLock && !inputLock,
           // 空欄が1カ所のときは入力した時点で判定するので、判定ボタンは出さない
           showCheck: blankCount !== 1,
+          padEnabled: !inputLock,
           onClear: blankCount > 1 ? onClearCoeffs : null,
-          clearEnabled: hasAnyCoeffInput(q) && !overlay && !checkLock,
+          clearEnabled:
+            hasAnyCoeffInput(q) && !overlay && !checkLock && !inputLock,
         })}
       </div>
     );
@@ -2498,7 +2629,8 @@ export default function App() {
   function renderBuildRun(q) {
     const used = usedCardFormulas();
     const stage = buildStage(q);
-    const canCheck = allSubsFilled(q) && allCoeffFilled(q) && !overlay && !checkLock;
+    const canCheck =
+      allSubsFilled(q) && allCoeffFilled(q) && !overlay && !checkLock && !inputLock;
     return (
       <div className="mt-5">
         <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 px-4 py-4 text-center">
@@ -2529,10 +2661,15 @@ export default function App() {
         </div>
 
         <div
-          key={stage}
-          className="mt-2 text-center text-[11px] font-bold text-white/45 animate-fadein"
+          key={inputLock ? "lock" : stage}
+          className={
+            "mt-2 text-center text-[11px] font-bold animate-fadein " +
+            (inputLock ? "text-amber-200/80" : "text-white/45")
+          }
         >
-          {stage === "subs"
+          {inputLock
+            ? "左右の原子の数を確かめよう…"
+            : stage === "subs"
             ? "説明文に出てくる物質をカードから選び、左辺と右辺に並べよう"
             : "左右の原子の数がそろうように係数を入力（物質を直すときはカードをタップ）"}
         </div>
@@ -2563,10 +2700,14 @@ export default function App() {
         {renderNumberPad({
           checkFn: onCheckBuild,
           checkEnabled: canCheck,
-          padEnabled: stage === "coeff",
+          padEnabled: stage === "coeff" && !inputLock,
           onClear: onClearCoeffs,
           clearEnabled:
-            stage === "coeff" && hasAnyCoeffInput(q) && !overlay && !checkLock,
+            stage === "coeff" &&
+            hasAnyCoeffInput(q) &&
+            !overlay &&
+            !checkLock &&
+            !inputLock,
         })}
       </div>
     );
@@ -2681,17 +2822,27 @@ export default function App() {
     const gr = gradeFor(lastResult.mode, lastResult.sec);
     const missed = lastResult.missedQuestions;
     const next = lastResult.phase === "main" ? nextRankInfo(lastResult.mode, lastResult.sec) : null;
-    // ミス数は lastResult（確定値）から読む
+    // 誤答・スキップ数は lastResult（確定値）から読む
     const missCount = coalesce(lastResult.wrongTaps, wrongTaps);
-    const noMiss = missCount === 0;
+    const skipCount = coalesce(lastResult.skips, 0);
+    const noMiss = missCount === 0 && skipCount === 0;
     // 復習は問題数も評価基準も本番と違うため、グレード用の見出し・講評は使わない
     const isReview = lastResult.phase === "review";
-    const headline = isReview ? "復習おつかれさま" : gr.title;
+    // 記録が残らない回は、タイムだけ速くてもランクや称号は出さない
+    // （誤答だらけで「速さも正確さも申し分なし」と出るのはおかしいため）
+    const voided = !!lastResult.tooManyMisses || !!lastResult.tooManySkips;
+    const headline = isReview
+      ? "復習おつかれさま"
+      : voided
+        ? "ランクなし"
+        : gr.title;
     const comment = isReview
       ? noMiss
         ? "今回はすべて正解。この調子で本番のタイムも縮めよう。"
         : "まだ迷う問題がある。もう一度復習してみよう。"
-      : gr.comment;
+      : voided
+        ? "1問ずつ確実に解けるようになると、タイムも自然に縮みます。"
+        : gr.comment;
     const gradeColor =
       gr.grade === "SS"
         ? "text-amber-300 [text-shadow:0_0_18px_rgba(251,191,36,0.6)]"
@@ -2712,7 +2863,14 @@ export default function App() {
             <span className="ml-1 text-2xl text-white/50">s</span>
           </div>
           {lastResult.phase === "main" ? (
-            <div className={"mt-3 text-5xl font-extrabold " + gradeColor}>{gr.grade}</div>
+            <div
+              className={
+                "mt-3 text-5xl font-extrabold " +
+                (voided ? "text-white/25" : gradeColor)
+              }
+            >
+              {voided ? "—" : gr.grade}
+            </div>
           ) : null}
           <div className="mt-3 text-lg font-bold text-white">{headline}</div>
           <div className="mx-auto mt-1 max-w-sm text-sm text-white/65">
@@ -2730,7 +2888,7 @@ export default function App() {
               </span>
             ) : null}
           </div>
-          {next ? (
+          {next && !voided ? (
             <div className="mt-3 text-xs font-bold text-white/60">
               次は
               <span className="mx-1 text-sm font-bold text-white">
@@ -2742,12 +2900,19 @@ export default function App() {
               </span>
             </div>
           ) : null}
-          {lastResult.tooManyMisses ? (
+          {lastResult.tooManyMisses || lastResult.tooManySkips ? (
             <div className="mx-auto mt-4 max-w-sm rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-xs font-bold leading-relaxed text-amber-200">
-              ミス・スキップの合計が {MODE_CONFIG[lastResult.mode].maxMiss}{" "}
-              回を超えたため、今回の記録は保存されません。
+              {lastResult.tooManyMisses
+                ? "誤答が " +
+                  MODE_CONFIG[lastResult.mode].maxMiss +
+                  " 回を超えたため、今回の記録は保存されません。"
+                : "スキップが " +
+                  MODE_CONFIG[lastResult.mode].maxSkip +
+                  " 回を超えたため、今回の記録は保存されません。"}
               <br />
-              あてずっぽうではなく、1問ずつ確実に答えてみよう。
+              {lastResult.tooManyMisses
+                ? "あてずっぽうではなく、1問ずつ確実に答えてみよう。"
+                : "まずは復習モードで、解ける問題を増やしてみよう。"}
             </div>
           ) : null}
           {lastResult.unlockedSecret ? (
@@ -2762,8 +2927,9 @@ export default function App() {
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            ミス・スキップ：{missCount} 回 ／ 最大コンボ：
-            {coalesce(lastResult.maxStreak, 0)}
+            誤答：{missCount} 回
+            {skipCount > 0 ? " ／ スキップ：" + skipCount + " 回" : ""} ／
+            最大コンボ：{coalesce(lastResult.maxStreak, 0)}
           </div>
         </div>
 
