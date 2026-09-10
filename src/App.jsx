@@ -84,8 +84,10 @@ const MODE_CONFIG = {};
    ・○×ジャッジ … 2択でランダムだと平均10ミス。＋5秒ペナルティと併せて 7
    ・係数バランス基本 … 中学範囲の係数は 1 と 2 でほぼ占められており（基本17式
      で 1が36・2が16・3と4が各1）、空欄1カ所だと答えが実質2択になる。
-     「2」を連打するだけで通ってしまわないよう、後半を空欄2カ所にしたうえで
-     10問中3ミスまでに絞る
+     数字を連打するだけで通ってしまわないよう 10問中3ミスまでに絞る。
+     pickBlankSlots で答えを散らしてあるため、いちばん有利な連打でも
+     平均6.3ミスになり、この値でほぼ確実に弾ける（緩めると効かなくなる：
+     4 で 15%、5 で 33% が通ってしまう）
    ・係数バランス チャレンジ／組み立てラボ … 係数が全部1の反応式が
      42式中16式（組み立て対象は22式中11式）あるため、「全部1」を入れて
      判定するだけで4〜5割は当たってしまう。この探りを弾ける値にする
@@ -125,9 +127,10 @@ MODE_CONFIG[MODES.COEFF_BASIC] = {
   questions: 10,
   maxMiss: 3,
   maxSkip: 3,
-  skipPenalty: 15,
-  // 後半5問が空欄2カ所になったぶん、基準タイムを引き上げている
-  grades: { ss: 65, s: 105, a: 160, b: 235 },
+  skipPenalty: 12,
+  grades: { ss: 50, s: 85, a: 135, b: 200 },
+  // 出題の偏りを直したので、旧仕様（「2」が半分以上を占めていた頃）の
+  // 記録とは比べられない。このモードのベスト記録だけリセットする
   recordVersion: 2,
   masterTitle: "バランスマスター!!",
 };
@@ -577,8 +580,10 @@ function coeffSlots(eq) {
  * ほぼ占められているため、答えが「2」に偏り（52.9%）、数字の 2 を連打する
  * だけで半分以上正解できてしまっていた。
  * ここでは1セット（10問）の中で答えの数字が散らばるように、
- * まだ出ていない値を優先して選ぶ。
- * 印字済みの係数が必ず1つは残るようにして、手がかりゼロにはしない。
+ * まだ出ていない値を優先して選ぶ。これで「2」の的中率は 35% まで下がり、
+ * めったに出なかった 3・4 も 1割ほど混ざるようになる。
+ * want は空欄の数。印字済みの係数が必ず1つは残るようにして、
+ * 手がかりゼロにはしない。
  */
 function pickBlankSlots(eq, want, valueUse) {
   const rest = coeffSlots(eq);
@@ -612,20 +617,18 @@ function pickBlankSlots(eq, want, valueUse) {
 
 /**
  * 係数バランスの出題
- * - 基本（level 1）: 中2の式から。前半5問は空欄1カ所、後半5問は2カ所。
- *   1カ所だけだと答えが実質2択（1 か 2）になり当てずっぽうが通るため、
- *   後半で組み合わせを 36 通りに広げて総当たりを成立させなくしている
+ * - 基本（level 1）: 空欄は1カ所だけ。残りの係数は印字済み（中2の式から出題）
  * - チャレンジ（level 2）: すべての係数を入力（全反応式から出題）
  * givenL / givenR: 印字済みの係数（null の場所が空欄）
  */
 function makeCoeffQuestions(level) {
   const pool = level === 1 ? equationsByLevel(1) : EQUATIONS;
   const valueUse = {};
-  return sampleN(pool, 10).map(function (eq, qi) {
+  return sampleN(pool, 10).map(function (eq) {
     let givenL;
     let givenR;
     if (level === 1) {
-      const blanks = pickBlankSlots(eq, qi < 5 ? 1 : 2, valueUse);
+      const blanks = pickBlankSlots(eq, 1, valueUse);
       const isBlank = function (side, idx) {
         for (let i = 0; i < blanks.length; i++) {
           if (blanks[i].side === side && blanks[i].idx === idx) return true;
@@ -921,11 +924,9 @@ function HelpModal(props) {
             <div className="font-bold text-violet-200">STEP2 係数バランス</div>
             <div className="mt-1">
               ▢に数字を入れて左右の原子数をそろえる。
-              基本は<span className="font-bold">前半5問が空欄1カ所</span>
-              （入力した時点で判定される）、
-              <span className="font-bold">後半5問が空欄2カ所</span>
-              （「判定する」で答え合わせ）。
-              チャレンジは全係数を入力する。
+              <span className="font-bold">基本は空欄1カ所</span>
+              （他の係数は印字済み）で、入力した時点で判定される。
+              チャレンジは全係数を入力し、「判定する」で答え合わせ。
               入力をやり直すときは「クリア」で全欄を一度に消せる。
               係数は<span className="font-bold">最も簡単な整数比</span>で、
               通常は書かない「1」もこのゲームでは入力する。
