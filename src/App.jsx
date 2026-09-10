@@ -877,9 +877,9 @@ function HelpModal(props) {
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
             <li>・ミスしても続行できるが、その分タイムを消費する。</li>
             <li>
-              ・わからないときは画面下の「わからない」で答えを見てスキップできる
-              （2度押しで確定。タイムにペナルティが加算され、ミスとして
-              復習リストに入る）。
+              ・わからないときは画面いちばん下の「わからない」で答えを見て
+              スキップできる（2度押しで確定。タイムにペナルティが加算され、
+              ミスとして復習リストに入る）。
             </li>
             <li>・結果画面の「復習」で、間違えた問題だけやり直せる。</li>
             <li>
@@ -2574,24 +2574,27 @@ export default function App() {
 
   /* ----- わからない（スキップ）ボタン ----- */
 
-  /* どのモードでも解答エリアのいちばん下に置く。位置を固定しておくと、
-     問題の種類が変わっても探さずに済む。誤タップ防止のため2度押し式 */
+  /* どのモードでも画面のいちばん下に置く（renderRun のスペーサーで押し下げる）。
+     位置が画面下端で固定なので、問題の種類が変わっても探さずに済む。
+     解答中に指が当たらないよう、解答エリアからは大きく離し、
+     ボタン自体も横幅いっぱいには広げない（当たり判定を小さくする）。
+     さらに誤タップ防止のため2度押し式にしてある */
   function renderSkipButton() {
     const penalty = MODE_CONFIG[mode].skipPenalty;
     const disabled = !!overlay || checkLock;
     let tone =
-      "border-white/10 bg-white/[0.04] text-white/50 hover:bg-white/10 hover:text-white/80";
+      "border-white/10 bg-white/[0.04] text-white/45 hover:bg-white/10 hover:text-white/75";
     if (disabled) tone = "border-white/5 bg-white/[0.03] text-white/20";
     else if (skipArmed)
       tone = "border-amber-300/50 bg-amber-500/20 text-amber-100";
     return (
-      <div className="mx-auto mt-6 w-full max-w-md">
+      <div className="flex justify-center">
         <button
           type="button"
           onClick={onSkip}
           disabled={disabled}
           className={
-            "flex min-h-[46px] w-full items-center justify-center rounded-2xl border px-4 text-sm font-bold transition active:scale-[0.99] " +
+            "inline-flex min-h-[44px] items-center justify-center rounded-full border px-6 text-xs font-bold transition active:scale-[0.98] " +
             tone
           }
         >
@@ -2613,10 +2616,14 @@ export default function App() {
     if (currentQ.kind === "judge") body = renderJudgeRun(currentQ);
     if (currentQ.kind === "build") body = renderBuildRun(currentQ);
     return (
-      <div className="mx-auto w-full max-w-2xl px-4 pb-24 pt-4 sm:px-6">
+      <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-4 pb-24 pt-4 sm:px-6">
         {renderHeader()}
         {renderProgressBar()}
         {body}
+        {/* 解答エリアとスキップボタンの間を空けるスペーサー。
+            画面に余裕があればボタンを下端まで押し下げ、
+            内容が多いモードでも最低 56px は離す */}
+        <div className="min-h-[56px] flex-1" aria-hidden="true" />
         {renderSkipButton()}
       </div>
     );
