@@ -472,21 +472,30 @@ export function allGenerated() {
   return CATALOG;
 }
 
-/** 層に対応する反応式の候補。層が上がるほど上の層のものも混ざる */
+/**
+ * 層に対応する反応式の候補。
+ * 5層目から先は「全部から」ではなく、難しい第3・第4層だけから出す。
+ * 全部から出すと簡単な式が混ざって1問あたりの時間が下がり、
+ * 持ち時間の加算が減っていっても終わらなくなってしまうため。
+ */
 export function poolForLayer(layer) {
-  var wanted = layer >= 5 ? 4 : layer;
   var pool = [];
-  for (var i = 0; i < CATALOG.length; i++) {
-    if (layer >= 5) {
-      pool.push(CATALOG[i]);
-    } else if (CATALOG[i].layer === wanted) {
-      pool.push(CATALOG[i]);
+  var i;
+  if (layer >= 5) {
+    for (i = 0; i < CATALOG.length; i++) {
+      if (CATALOG[i].layer >= 3) pool.push(CATALOG[i]);
     }
+    return pool;
+  }
+  for (i = 0; i < CATALOG.length; i++) {
+    if (CATALOG[i].layer === layer) pool.push(CATALOG[i]);
   }
   // その層に十分な数がないときは、下の層も足す
   if (pool.length < 8) {
     for (var j = 0; j < CATALOG.length; j++) {
-      if (CATALOG[j].layer <= wanted && pool.indexOf(CATALOG[j]) < 0) pool.push(CATALOG[j]);
+      if (CATALOG[j].layer <= layer && pool.indexOf(CATALOG[j]) < 0) {
+        pool.push(CATALOG[j]);
+      }
     }
   }
   return pool;

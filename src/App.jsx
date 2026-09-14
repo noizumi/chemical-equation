@@ -172,8 +172,9 @@ MODE_CONFIG[MODES.LAB] = {
   wrongPenaltyMs: 10000,
   nearMissPenaltyMs: 3000,
   skipPenaltyMs: 15000,
-  // 到達問題数のグレード基準（多いほど良い）
-  grades: { ss: 32, s: 24, a: 16, b: 9 },
+  // 到達問題数のグレード基準（多いほど良い）。
+  // 1問10〜15秒で解く想定での見積もりなので、実際の到達数を見て調整する
+  grades: { ss: 35, s: 26, a: 18, b: 10 },
   masterTitle: "ラボマスター!!",
 };
 
@@ -860,13 +861,26 @@ function makeLabQuestion(layer) {
   return { kind: "lab", eq: eq, layer: layer, givenL: givenL, givenR: givenR };
 }
 
-/** 無限ラボで1問正解したときに増える持ち時間（ミリ秒） */
+/**
+ * 無限ラボで1問正解したときに増える持ち時間（ミリ秒）
+ *
+ * 想定している解答時間は 第1層10秒 → 第4層15秒。
+ * 加算はそれより3秒ほど長くしてあり、正確でありさえすれば
+ * ゆっくり考えても詰まらない（瞬発力ゲームにしないため）。
+ * 5層目からは3秒ずつ減っていき、いつかは必ず時間切れになる。
+ *
+ * ここと LAB_MAX_BANK_MS を触れば、全体の長さを調整できる。
+ */
 function labBonusMs(layer) {
-  const table = [16000, 22000, 26000, 28000];
+  const table = [13000, 15000, 17000, 18000];
   if (layer <= 4) return table[layer - 1];
-  // 5層目からは加算が思考時間を下回っていき、いつかは必ず時間切れになる
-  return Math.max(12000, 28000 - 2000 * (layer - 4));
+  return Math.max(4000, 18000 - 3000 * (layer - 4));
 }
+
+/* 持ち時間の上限。上限がないと、早く解ける生徒ほど貯金が増え続けて
+   加算が減っても終わらなくなる。上限に当たるのは速い生徒だけで、
+   そこから先は「減っていく加算に解答が追いつけるか」の勝負になる */
+const LAB_MAX_BANK_MS = 80000;
 
 function buildQuestionsForMode(mode) {
   // 無限ラボは1問ずつ生成して終わりがないので、最初の1問だけ作る
@@ -1070,10 +1084,11 @@ function HelpModal(props) {
               教科書にない反応式も出てくる、
               <span className="font-bold">終わりのないサバイバル</span>。
               持ち時間60秒から始まり、1問正解するごとに時間が増える
-              （層が上がるほど増える時間は短くなる）。誤答は−10秒、
+              （上限80秒。層が上がるほど増える時間は短くなる）。誤答は−10秒、
               スキップは−15秒。時間が尽きるまでに何問クリアできるかを競う。
               係数が2桁になる問題もあるので、テンキーは数字を続けて押せば
-              10以上も入力できる。
+              10以上も入力できる。係数欄の移動は
+              <span className="font-bold">「次へ ▶」</span>でもできる。
             </div>
           </div>
           <ul className="space-y-1 pl-1 text-xs text-white/65">
@@ -1528,6 +1543,12 @@ export default function App() {
   /** 持ち時間を増減する。ボーナスは画面にも短く出す */
   function addLabMs(ms) {
     labDeadlineRef.current += ms;
+    if (ms > 0) {
+      // 上限を超えないようにする
+      const now = pauseStartRef.current !== null ? pauseStartRef.current : Date.now();
+      const cap = now + LAB_MAX_BANK_MS;
+      if (labDeadlineRef.current > cap) labDeadlineRef.current = cap;
+    }
     setLabBonus({ ms: ms, key: Date.now() });
     if (bonusTimerRef.current) clearTimeout(bonusTimerRef.current);
     bonusTimerRef.current = setTimeout(function () {
@@ -2264,6 +2285,30 @@ export default function App() {
     setCoeffValue(selPos.side, selPos.idx, next);
   }
 
+  /** 次の係数欄へ移る（Tab のように使う。化学式をタップしなくてよい） */
+  function onTapNextSlot() {
+    const q = questionsRef.current[qIndexRef.current];
+    if (!q) return;
+    if (overlay || checkLock || inputLock) return;
+    const slots = currentSlots(q);
+    if (!slots.length) return;
+    let at = 0;
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i].side === selPos.side && slots[i].idx === selPos.idx) {
+        at = i;
+        break;
+      }
+    }
+    // 印字済みの欄は飛ばす（無限ラボは全部空欄だが、念のため）
+    for (let step = 1; step <= slots.length; step++) {
+      const cand = slots[(at + step) % slots.length];
+      if (isEditableCoeffSlot(q, cand.side, cand.idx)) {
+        setSelPos({ side: cand.side, idx: cand.idx });
+        return;
+      }
+    }
+  }
+
   /** 無限ラボの1桁消し */
   function onTapBackspace() {
     const q = questionsRef.current[qIndexRef.current];
@@ -2783,6 +2828,20 @@ export default function App() {
           >
             ⌫
           </button>
+          <button
+            type="button"
+            disabled={!enabled}
+            onClick={onTapNextSlot}
+            className={
+              "h-14 rounded-2xl border text-sm font-bold transition " +
+              (enabled
+                ? "border-sky-300/30 bg-sky-400/15 text-sky-100 hover:bg-sky-400/25 active:scale-[0.97]"
+                : "border-white/5 bg-white/[0.03] text-white/20")
+            }
+            aria-label="次の係数欄へ"
+          >
+            次へ ▶
+          </button>
         </div>
         <div className="mt-3 flex gap-2">
           <button
@@ -2940,7 +2999,7 @@ export default function App() {
         >
           {inputLock
             ? "左右の原子の数を確かめよう…"
-            : "マスを選んで数字をタップ（2桁も入力できる。係数 1 も入力する）"}
+            : "数字を続けて押せば2桁も入力できる。「次へ」で右の欄へ移る"}
         </div>
         {renderLabPad({
           checkFn: onCheckCoeff,
