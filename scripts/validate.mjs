@@ -4,6 +4,7 @@
  * - すべての反応式が「つり合っている」「最も簡単な整数比」であることを確認
  * - 反応式に登場する化学式がすべて物質データに登録されていることを確認
  */
+import { allGenerated as generated } from "../src/generator.js";
 import { checkBalance, equationToUnicode, parseFormula } from "../src/chem.js";
 import { EQUATIONS, SUBSTANCES, substanceByFormula, quizSubstances, judgeEquations, buildEquations, equationsByLevel } from "../src/data.js";
 
@@ -157,6 +158,52 @@ console.log(
       .map((k) => k + "が" + valueTally[k])
       .join(" / ")
 );
+
+/* ---- 無限ラボ（自動生成）の検査 ---- */
+const gen = generated();
+const genIds = new Set();
+const genKeys = new Set();
+for (const e of gen) {
+  if (genIds.has(e.id)) fail("生成した反応式の id が重複: " + e.id);
+  genIds.add(e.id);
+  const res = checkBalance(e, e.left.map((t) => t.coeff), e.right.map((t) => t.coeff));
+  const show =
+    e.left.map((t) => t.coeff + t.formula).join(" + ") +
+    " → " +
+    e.right.map((t) => t.coeff + t.formula).join(" + ");
+  if (!res.balanced) fail("生成した反応式がつり合わない: " + e.id + " " + show);
+  if (!res.simplest) fail("生成した反応式が最簡整数比でない: " + e.id + " " + show);
+  for (const t of e.left.concat(e.right)) {
+    try {
+      parseFormula(t.formula);
+    } catch (err) {
+      fail("生成した化学式がパースできない: " + t.formula + " (" + e.id + ")");
+    }
+  }
+  // 同じ辺に同じ物質が2回出ていないか
+  for (const side of [e.left, e.right]) {
+    const fs = side.map((t) => t.formula);
+    if (new Set(fs).size !== fs.length) fail("同じ辺に同じ物質: " + e.id);
+  }
+  const key =
+    e.left.map((t) => t.formula).sort().join("+") +
+    ">" +
+    e.right.map((t) => t.formula).sort().join("+");
+  if (genKeys.has(key)) fail("生成した反応式が重複: " + e.id + " " + show);
+  genKeys.add(key);
+}
+const byLayer = {};
+for (const e of gen) byLayer[e.layer] = (byLayer[e.layer] || 0) + 1;
+console.log(
+  "無限ラボの自動生成: " +
+    gen.length +
+    " 式（層ごと " +
+    Object.keys(byLayer).sort().map((k) => k + "→" + byLayer[k]).join(" / ") +
+    "）"
+);
+for (const lv of [1, 2, 3, 4]) {
+  if (!byLayer[lv] || byLayer[lv] < 8) fail("無限ラボ 第" + lv + "層の反応式が少なすぎる");
+}
 
 if (errors > 0) {
   console.error("\n" + errors + " 件のエラー");

@@ -13,6 +13,7 @@ import {
   buildEquations,
   quizSubstances,
 } from "./data.js";
+import { poolForLayer } from "./generator.js";
 
 /**
  * 化学反応式マスター（中2理科「化学変化」）
@@ -69,6 +70,7 @@ const MODES = {
   COEFF_CHALLENGE: "coeff_challenge",
   JUDGE: "judge",
   BUILD: "build",
+  LAB: "lab",
 };
 
 const MODE_CONFIG = {};
@@ -154,6 +156,27 @@ MODE_CONFIG[MODES.JUDGE] = {
   grades: { ss: 28, s: 42, a: 65, b: 95 },
   masterTitle: "ジャッジマスター!!",
 };
+/* 無限ラボだけは「タイムの短さ」ではなく「到達問題数の多さ」を competition する。
+   scoreKind: "count" を付けたモードは、記録の良し悪しの向きが逆になる。
+
+   持ち時間は60秒から始まり、1問正解するごとに層に応じた秒数が加算される。
+   加算は「その層で普通に考えて解くのにかかる時間」より少し長くしてあり、
+   正確でありさえすればゆっくり考えても詰まない（瞬発力ゲームにしない）。
+   層が上がると加算が思考時間を下回っていくので、いつかは必ず時間切れになる */
+MODE_CONFIG[MODES.LAB] = {
+  title: "無限ラボ",
+  shortLabel: "∞ラボ",
+  scoreKind: "count",
+  questionsPerLayer: 5,
+  startMs: 60000,
+  wrongPenaltyMs: 10000,
+  nearMissPenaltyMs: 3000,
+  skipPenaltyMs: 15000,
+  // 到達問題数のグレード基準（多いほど良い）
+  grades: { ss: 32, s: 24, a: 16, b: 9 },
+  masterTitle: "ラボマスター!!",
+};
+
 MODE_CONFIG[MODES.BUILD] = {
   title: "組み立てラボ",
   shortLabel: "組み立て",
@@ -174,11 +197,33 @@ const BASE_MODES = [
   MODES.COEFF_CHALLENGE,
 ];
 const SECRET_MODES = [MODES.JUDGE, MODES.BUILD];
+/* 真の裏モード（無限ラボ）の解放条件：STEP3・STEP4 の両方で S ランク以上 */
+const DEEP_SECRET_MODES = [MODES.LAB];
+
+/** 記録の良し悪しが「大きいほど良い」モードか */
+function isCountMode(mode) {
+  return MODE_CONFIG[mode].scoreKind === "count";
+}
+
+/** 記録の値。タイムのモードは秒、無限ラボは到達問題数 */
+function recordValueOf(rec) {
+  if (!rec) return null;
+  if (typeof rec.score === "number" && isFinite(rec.score)) return rec.score;
+  if (typeof rec.sec === "number" && isFinite(rec.sec)) return rec.sec;
+  return null;
+}
+
+/** value のほうが prev より良い記録か（prev が null なら常に良い） */
+function isBetterRecord(mode, value, prev) {
+  if (prev === null || prev === undefined) return true;
+  return isCountMode(mode) ? value > prev : value < prev;
+}
 
 function hasSGradeForMode(bestByMode, mode) {
-  const rec = bestByMode && bestByMode[mode];
-  if (!rec || typeof rec.sec !== "number" || !isFinite(rec.sec)) return false;
-  return rec.sec <= MODE_CONFIG[mode].grades.s;
+  const v = recordValueOf(bestByMode && bestByMode[mode]);
+  if (v === null) return false;
+  const s = MODE_CONFIG[mode].grades.s;
+  return isCountMode(mode) ? v >= s : v <= s;
 }
 
 function isSecretUnlocked(bestByMode) {
@@ -188,8 +233,41 @@ function isSecretUnlocked(bestByMode) {
   return true;
 }
 
+/** 真の裏モードの解放条件：裏モードが解放済みで、STEP3・STEP4 が S ランク */
+function isDeepSecretUnlocked(bestByMode) {
+  if (!isSecretUnlocked(bestByMode)) return false;
+  for (let i = 0; i < SECRET_MODES.length; i++) {
+    if (!hasSGradeForMode(bestByMode, SECRET_MODES[i])) return false;
+  }
+  return true;
+}
+
 function gradeFor(mode, sec) {
   const g = MODE_CONFIG[mode].grades;
+  if (isCountMode(mode)) {
+    // 到達問題数は多いほど良いので、判定の向きが逆になる
+    if (sec >= g.ss) {
+      return {
+        grade: "SS",
+        title: "ラボレジェンド!!!",
+        comment: "この深さは伝説級。原子の数が見えている者だけが到達できる領域です。",
+      };
+    }
+    if (sec >= g.s) {
+      return {
+        grade: "S",
+        title: MODE_CONFIG[mode].masterTitle,
+        comment: "未知の反応式でも落ち着いて数えられている証拠です。",
+      };
+    }
+    if (sec >= g.a) {
+      return { grade: "A", title: "すばらしい！", comment: "深いところまで到達。Sランクはもう目の前です。" };
+    }
+    if (sec >= g.b) {
+      return { grade: "B", title: "順調！", comment: "焦らず1問ずつ。正確に解けば持ち時間は増えていきます。" };
+    }
+    return { grade: "C", title: "これから伸びる", comment: "まずは炭素・水素・酸素の順に数える手順を固めよう。" };
+  }
   if (sec < g.ss) {
     return {
       grade: "SS",
@@ -245,19 +323,29 @@ function readBestRecord(mode) {
     const raw = ls.getItem(bestStorageKey(mode));
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    if (!obj || typeof obj.sec !== "number" || !isFinite(obj.sec)) return null;
-    return { sec: obj.sec, at: typeof obj.at === "number" ? obj.at : null };
+    if (!obj) return null;
+    const at = typeof obj.at === "number" ? obj.at : null;
+    if (typeof obj.score === "number" && isFinite(obj.score)) {
+      return { score: obj.score, at: at };
+    }
+    if (typeof obj.sec === "number" && isFinite(obj.sec)) {
+      return { sec: obj.sec, at: at };
+    }
+    return null;
   } catch (e) {
     return null;
   }
 }
 
-function writeBestRecord(mode, sec) {
+function writeBestRecord(mode, value) {
   try {
     if (typeof window === "undefined") return;
     const ls = window.localStorage;
     if (!ls) return;
-    ls.setItem(bestStorageKey(mode), JSON.stringify({ sec: sec, at: Date.now() }));
+    const body = isCountMode(mode)
+      ? { score: value, at: Date.now() }
+      : { sec: value, at: Date.now() };
+    ls.setItem(bestStorageKey(mode), JSON.stringify(body));
   } catch (e) {
     // ignore
   }
@@ -754,7 +842,35 @@ function makeBuildQuestions() {
   });
 }
 
+/** 係数スロットを扱う問題か（係数バランスと無限ラボで処理を共有する） */
+function isCoeffKind(q) {
+  return !!q && (q.kind === "coeff" || q.kind === "lab");
+}
+
+/** 無限ラボの出題を1問つくる。層が上がるほど難しい反応式が出る */
+function makeLabQuestion(layer) {
+  const pool = poolForLayer(layer);
+  const eq = pool[randInt(0, pool.length - 1)];
+  const givenL = eq.left.map(function () {
+    return null;
+  });
+  const givenR = eq.right.map(function () {
+    return null;
+  });
+  return { kind: "lab", eq: eq, layer: layer, givenL: givenL, givenR: givenR };
+}
+
+/** 無限ラボで1問正解したときに増える持ち時間（ミリ秒） */
+function labBonusMs(layer) {
+  const table = [16000, 22000, 26000, 28000];
+  if (layer <= 4) return table[layer - 1];
+  // 5層目からは加算が思考時間を下回っていき、いつかは必ず時間切れになる
+  return Math.max(12000, 28000 - 2000 * (layer - 4));
+}
+
 function buildQuestionsForMode(mode) {
+  // 無限ラボは1問ずつ生成して終わりがないので、最初の1問だけ作る
+  if (mode === MODES.LAB) return [makeLabQuestion(1)];
   if (mode === MODES.FORMULA_BASIC) return makeFormulaQuestions(1);
   if (mode === MODES.FORMULA_CHALLENGE) return makeFormulaQuestions(2);
   if (mode === MODES.COEFF_BASIC) return makeCoeffQuestions(1);
@@ -948,6 +1064,18 @@ function HelpModal(props) {
               化学反応式を書くときの手順そのままの流れ。
             </div>
           </div>
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
+            <div className="font-bold text-emerald-200">FINAL 無限ラボ</div>
+            <div className="mt-1">
+              教科書にない反応式も出てくる、
+              <span className="font-bold">終わりのないサバイバル</span>。
+              持ち時間60秒から始まり、1問正解するごとに時間が増える
+              （層が上がるほど増える時間は短くなる）。誤答は−10秒、
+              スキップは−15秒。時間が尽きるまでに何問クリアできるかを競う。
+              係数が2桁になる問題もあるので、テンキーは数字を続けて押せば
+              10以上も入力できる。
+            </div>
+          </div>
           <ul className="space-y-1 pl-1 text-xs text-white/65">
             <li>・スタート後 3・2・1 のカウントダウンでタイムアタック開始。</li>
             <li>
@@ -968,6 +1096,10 @@ function HelpModal(props) {
             <li>・連続正解でコンボ🔥が伸びる。ノーミスを狙おう。</li>
             <li>・正解表示中はタイマーが停止。落ち着いて式を確認できる。</li>
             <li>・効果音はホーム右上のボタンで ON にできる（初期設定は OFF）。</li>
+            <li className="font-bold text-emerald-200/90">
+              ・無限ラボは真の裏モード。STEP3・STEP4 でもSランクをとると
+              解放される。
+            </li>
             <li className="font-bold text-amber-200/90">
               ・STEP3・STEP4 は裏モード。STEP1・STEP2 の全4モードで
               Sランク以上をとると解放される（それまではカードが
@@ -1006,6 +1138,12 @@ const ACCENT_STYLES = {
     badge: "bg-rose-400/20 text-rose-100 border-rose-300/30",
     btn: "border-rose-300/25 bg-rose-400/10",
     btnHover: " hover:bg-rose-400/20",
+  },
+  emerald: {
+    card: "border-emerald-400/25 bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent",
+    badge: "bg-emerald-400/20 text-emerald-100 border-emerald-300/30",
+    btn: "border-emerald-300/25 bg-emerald-400/10",
+    btnHover: " hover:bg-emerald-400/20",
   },
 };
 
@@ -1069,12 +1207,13 @@ function StartButton(props) {
   const st = props.accent ? ACCENT_STYLES[props.accent] : null;
   const tone = st ? st.btn : "border-white/15 bg-white/10";
   const toneHover = st ? st.btnHover : " hover:bg-white/15";
-  const rec = props.best;
-  const hasRec = rec && typeof rec.sec === "number" && isFinite(rec.sec);
+  const recValue = recordValueOf(props.best);
+  const hasRec = recValue !== null;
+  const countMode = props.mode ? isCountMode(props.mode) : false;
   let recNode = null;
   if (props.mode) {
     if (hasRec) {
-      const g = gradeFor(props.mode, rec.sec).grade;
+      const g = gradeFor(props.mode, recValue).grade;
       const gColor =
         g === "SS"
           ? "text-amber-300 [text-shadow:0_0_8px_rgba(251,191,36,0.55)]"
@@ -1085,14 +1224,16 @@ function StartButton(props) {
               : "text-white/80";
       recNode = (
         <span className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-white/55">
-          <span>ベスト {formatSeconds(rec.sec)}s</span>
+          <span>
+            ベスト {countMode ? recValue + "問" : formatSeconds(recValue) + "s"}
+          </span>
           <span className={"text-[13px] font-bold leading-none " + gColor}>{g}</span>
         </span>
       );
     } else {
       recNode = (
         <span className="mt-1.5 block text-[10px] font-bold leading-none text-white/35">
-          ベスト --.-s
+          {countMode ? "ベスト --問" : "ベスト --.-s"}
         </span>
       );
     }
@@ -1189,6 +1330,33 @@ function StageChip(props) {
 
 /** 経過時間の表示。ここだけが毎秒10回更新されるよう切り離してある
  *  （App 全体を再描画すると、その間の DOM 変更でタップが不安定になる） */
+/** 無限ラボの残り時間。0 になったら onExpire を1度だけ呼ぶ */
+function LabClock(props) {
+  const read = props.read;
+  const [ms, setMs] = useState(read());
+  const firedRef = useRef(false);
+  const cbRef = useRef(props.onExpire);
+  cbRef.current = props.onExpire;
+  useEffect(function () {
+    const t = setInterval(function () {
+      const v = read();
+      setMs(v);
+      if (v <= 0 && !firedRef.current) {
+        firedRef.current = true;
+        cbRef.current();
+      }
+    }, 100);
+    return function () {
+      clearInterval(t);
+    };
+  }, []);
+  const sec = Math.max(0, ms) / 1000;
+  const low = sec <= 10;
+  return (
+    <span className={low ? "text-rose-300" : undefined}>{formatSeconds(sec)}</span>
+  );
+}
+
 function ElapsedTime(props) {
   const read = props.read;
   const [sec, setSec] = useState(read());
@@ -1281,6 +1449,13 @@ export default function App() {
   const [inputLock, setInputLock] = useState(false);
   const inputLockTimerRef = useRef(null);
 
+  // 無限ラボ：持ち時間の期限（絶対時刻）と、到達した問題数・層
+  const labDeadlineRef = useRef(0);
+  const clearedRef = useRef(0);
+  const [cleared, setCleared] = useState(0);
+  const [labBonus, setLabBonus] = useState(null);
+  const bonusTimerRef = useRef(null);
+
   const [lastResult, setLastResult] = useState(null);
   const [bestByMode, setBestByMode] = useState({});
   const [showHelp, setShowHelp] = useState(false);
@@ -1310,6 +1485,7 @@ export default function App() {
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
       if (inputLockTimerRef.current) clearTimeout(inputLockTimerRef.current);
+      if (bonusTimerRef.current) clearTimeout(bonusTimerRef.current);
     };
   }, []);
 
@@ -1334,9 +1510,30 @@ export default function App() {
 
   function resumeTimer() {
     if (pauseStartRef.current !== null) {
-      totalPausedMsRef.current += Date.now() - pauseStartRef.current;
+      const paused = Date.now() - pauseStartRef.current;
+      totalPausedMsRef.current += paused;
+      // 無限ラボは期限そのものを後ろへずらして、演出中の時間を消費させない
+      if (labDeadlineRef.current) labDeadlineRef.current += paused;
       pauseStartRef.current = null;
     }
+  }
+
+  /** 無限ラボの残り時間（ミリ秒）。演出で止まっている間は減らない */
+  function labRemainingMs() {
+    if (!labDeadlineRef.current) return 0;
+    const now = pauseStartRef.current !== null ? pauseStartRef.current : Date.now();
+    return labDeadlineRef.current - now;
+  }
+
+  /** 持ち時間を増減する。ボーナスは画面にも短く出す */
+  function addLabMs(ms) {
+    labDeadlineRef.current += ms;
+    setLabBonus({ ms: ms, key: Date.now() });
+    if (bonusTimerRef.current) clearTimeout(bonusTimerRef.current);
+    bonusTimerRef.current = setTimeout(function () {
+      setLabBonus(null);
+      bonusTimerRef.current = null;
+    }, 900);
   }
 
   /* ---------- カウントダウン ---------- */
@@ -1358,6 +1555,9 @@ export default function App() {
         startMsRef.current = Date.now();
         pauseStartRef.current = null;
         totalPausedMsRef.current = 0;
+        if (mode === MODES.LAB) {
+          labDeadlineRef.current = Date.now() + MODE_CONFIG[MODES.LAB].startMs;
+        }
         setScreen("run");
       }, 500);
       return function () {
@@ -1407,6 +1607,10 @@ export default function App() {
       clearTimeout(inputLockTimerRef.current);
       inputLockTimerRef.current = null;
     }
+    if (bonusTimerRef.current) {
+      clearTimeout(bonusTimerRef.current);
+      bonusTimerRef.current = null;
+    }
   }
 
   function resetQuestionState(q) {
@@ -1418,7 +1622,7 @@ export default function App() {
     setSkipArmed(false);
     setInputLock(false);
     setOverlay(null);
-    if (q && q.kind === "coeff") {
+    if (isCoeffKind(q)) {
       // 印字済みの係数はそのまま入り、空欄（null）だけ入力対象になる
       setCoeffL(q.givenL.slice());
       setCoeffR(q.givenR.slice());
@@ -1466,6 +1670,10 @@ export default function App() {
     wrongTapsRef.current = 0;
     setWrongTaps(0);
     skipsRef.current = 0;
+    clearedRef.current = 0;
+    setCleared(0);
+    setLabBonus(null);
+    labDeadlineRef.current = 0;
     streakRef.current = 0;
     maxStreakRef.current = 0;
     setStreak(0);
@@ -1481,6 +1689,12 @@ export default function App() {
   function startMode(nextMode) {
     // 裏モードは解放されるまで反応しない
     if (SECRET_MODES.indexOf(nextMode) >= 0 && !isSecretUnlocked(bestByMode)) {
+      return;
+    }
+    if (
+      DEEP_SECRET_MODES.indexOf(nextMode) >= 0 &&
+      !isDeepSecretUnlocked(bestByMode)
+    ) {
       return;
     }
     startRun(nextMode, "main", buildQuestionsForMode(nextMode));
@@ -1543,7 +1757,11 @@ export default function App() {
   }
 
   function finishRun() {
-    const sec = currentElapsedSec();
+    // 無限ラボは時間切れからも呼ばれるので、進行中のタイマーを止めておく
+    clearTransientTimers();
+    const isLab = mode === MODES.LAB;
+    // 無限ラボの「記録」はタイムではなく到達問題数
+    const sec = isLab ? clearedRef.current : currentElapsedSec();
     const qs = questionsRef.current;
     const missedQuestions = [];
     for (let i = 0; i < qs.length; i++) {
@@ -1554,15 +1772,20 @@ export default function App() {
     const cfg = MODE_CONFIG[mode];
     const missCount = wrongTapsRef.current;
     const skipCount = skipsRef.current;
-    const tooManyMisses = missCount > cfg.maxMiss;
-    const tooManySkips = skipCount > cfg.maxSkip;
+    // 無限ラボは誤答・スキップが持ち時間を直接削るので、回数の上限は設けない
+    const tooManyMisses = !isLab && missCount > cfg.maxMiss;
+    const tooManySkips = !isLab && skipCount > cfg.maxSkip;
     const noRecord = tooManyMisses || tooManySkips;
     let isNewBest = false;
     const prevUnlocked = isSecretUnlocked(bestByMode);
     let nowUnlocked = prevUnlocked;
-    if (phase === "main" && !noRecord) {
-      const prev = bestByMode[mode];
-      if (!prev || sec < prev.sec) {
+    const prevDeepUnlocked = isDeepSecretUnlocked(bestByMode);
+    let nowDeepUnlocked = prevDeepUnlocked;
+    // 到達0問の回は記録として残さない（「ベスト更新」が出るのがおかしいため）
+    const worthRecording = !isCountMode(mode) || sec > 0;
+    if (phase === "main" && !noRecord && worthRecording) {
+      const prev = recordValueOf(bestByMode[mode]);
+      if (isBetterRecord(mode, sec, prev)) {
         isNewBest = true;
         writeBestRecord(mode, sec);
         const nextMap = {};
@@ -1571,12 +1794,16 @@ export default function App() {
             nextMap[k] = bestByMode[k];
           }
         }
-        nextMap[mode] = { sec: sec, at: Date.now() };
+        nextMap[mode] = isCountMode(mode)
+          ? { score: sec, at: Date.now() }
+          : { sec: sec, at: Date.now() };
         setBestByMode(nextMap);
         nowUnlocked = isSecretUnlocked(nextMap);
+        nowDeepUnlocked = isDeepSecretUnlocked(nextMap);
       }
     }
     const unlockedSecret = !prevUnlocked && nowUnlocked;
+    const unlockedDeep = !prevDeepUnlocked && nowDeepUnlocked;
     setLastResult({
       mode: mode,
       phase: phase,
@@ -1584,6 +1811,8 @@ export default function App() {
       missedQuestions: missedQuestions,
       isNewBest: isNewBest,
       unlockedSecret: unlockedSecret,
+      unlockedDeep: unlockedDeep,
+      cleared: clearedRef.current,
       maxStreak: maxStreakRef.current,
       wrongTaps: missCount,
       skips: skipCount,
@@ -1591,7 +1820,7 @@ export default function App() {
       tooManySkips: tooManySkips,
     });
     playFinish();
-    if (unlockedSecret) playUnlock(600);
+    if (unlockedSecret || unlockedDeep) playUnlock(600);
     setOverlay(null);
     setScreen("result");
   }
@@ -1601,6 +1830,23 @@ export default function App() {
     resumeTimer();
     setOverlay(null);
     const next = qIndexRef.current + 1;
+    if (mode === MODES.LAB) {
+      // 終わりがないモード。時間切れになるまで next の問題を作り続ける
+      if (labRemainingMs() <= 0) {
+        finishRun();
+        return;
+      }
+      const cfg = MODE_CONFIG[MODES.LAB];
+      const layer = Math.floor(clearedRef.current / cfg.questionsPerLayer) + 1;
+      const q = makeLabQuestion(layer);
+      const list = questionsRef.current.concat([q]);
+      questionsRef.current = list;
+      setQuestions(list);
+      qIndexRef.current = next;
+      setQIndex(next);
+      resetQuestionState(q);
+      return;
+    }
     if (next >= questionsRef.current.length) {
       finishRun();
       return;
@@ -1664,6 +1910,7 @@ export default function App() {
     if (q.kind === "judge") {
       return q.correct ? "表示されていた式は正しかった" : "正しくは：";
     }
+    if (q.kind === "lab") return q.eq.cat;
     return q.eq.desc;
   }
 
@@ -1686,9 +1933,16 @@ export default function App() {
       skipTimerRef.current = null;
     }
     setSkipArmed(false);
-    const penalty = MODE_CONFIG[mode].skipPenalty;
-    penaltyRef.current += penalty;
-    setPenaltySec(penaltyRef.current);
+    const isLab = mode === MODES.LAB;
+    const penalty = isLab
+      ? Math.round(MODE_CONFIG[MODES.LAB].skipPenaltyMs / 1000)
+      : MODE_CONFIG[mode].skipPenalty;
+    if (isLab) {
+      addLabMs(-MODE_CONFIG[MODES.LAB].skipPenaltyMs);
+    } else {
+      penaltyRef.current += penalty;
+      setPenaltySec(penaltyRef.current);
+    }
     // 復習リストには入れるが、誤答の回数とは別枠で数える。
     // 自分から選んだ操作なので、ミスの効果音も鳴らさない
     markSkipped();
@@ -1810,14 +2064,14 @@ export default function App() {
   }
 
   function isEditableCoeffSlot(q, side, idx) {
-    if (q.kind !== "coeff") return true;
+    if (!isCoeffKind(q)) return true;
     const given = side === "L" ? q.givenL : q.givenR;
     return given[idx] === null;
   }
 
   function onTapNumber(n) {
     const q = questionsRef.current[qIndexRef.current];
-    if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
+    if (!q || (!isCoeffKind(q) && q.kind !== "build")) return;
     if (overlay || checkLock || inputLock) return;
     // 組み立てモードは物質をすべて並べてから係数を入力する
     if (q.kind === "build" && !allSubsFilled(q)) return;
@@ -1866,7 +2120,7 @@ export default function App() {
 
   /** 係数バランスの空欄数（基本は1、チャレンジは全スロット） */
   function blankCountOf(q) {
-    if (!q || q.kind !== "coeff") return 0;
+    if (!isCoeffKind(q)) return 0;
     let c = 0;
     for (let i = 0; i < q.givenL.length; i++) {
       if (q.givenL[i] === null) c++;
@@ -1880,7 +2134,7 @@ export default function App() {
   /** 入力済みの係数が1つでもあるか（クリアボタンの有効判定） */
   function hasAnyCoeffInput(q) {
     if (!q) return false;
-    if (q.kind === "coeff") {
+    if (isCoeffKind(q)) {
       for (let i = 0; i < q.givenL.length; i++) {
         if (q.givenL[i] === null && !isNil(coeffL[i])) return true;
       }
@@ -1901,10 +2155,10 @@ export default function App() {
   /** 入力した係数を一括で取り消す（印字済みの係数と、配置した物質はそのまま） */
   function onClearCoeffs() {
     const q = questionsRef.current[qIndexRef.current];
-    if (!q || (q.kind !== "coeff" && q.kind !== "build")) return;
+    if (!q || (!isCoeffKind(q) && q.kind !== "build")) return;
     if (overlay || checkLock || inputLock) return;
     let sel = null;
-    if (q.kind === "coeff") {
+    if (isCoeffKind(q)) {
       setCoeffL(q.givenL.slice());
       setCoeffR(q.givenR.slice());
       for (let i = 0; i < q.givenL.length && !sel; i++) {
@@ -1951,10 +2205,75 @@ export default function App() {
 
   function onCheckCoeff() {
     const q = questionsRef.current[qIndexRef.current];
-    if (!q || q.kind !== "coeff") return;
+    if (!isCoeffKind(q)) return;
     if (overlay || checkLock || inputLock) return;
     if (!allCoeffFilled(q)) return;
-    runCoeffCheck(q, coeffL, coeffR);
+    if (q.kind === "lab") runLabCheck(q, coeffL, coeffR);
+    else runCoeffCheck(q, coeffL, coeffR);
+  }
+
+  /* ---------- 無限ラボ ---------- */
+
+  /** 無限ラボの正誤判定。正解で持ち時間が増え、誤答で減る */
+  function runLabCheck(q, l, r) {
+    const res = checkBalance(q.eq, l, r);
+    const cfg = MODE_CONFIG[MODES.LAB];
+    if (res.balanced && res.simplest) {
+      onSolved();
+      clearedRef.current += 1;
+      setCleared(clearedRef.current);
+      const bonus = labBonusMs(q.layer);
+      addLabMs(bonus);
+      pauseTimer();
+      setCheckLock(true);
+      setOverlay({
+        kind: "correct",
+        title: "正解！ ＋" + Math.round(bonus / 1000) + "秒",
+        sub: q.eq.cat,
+        node: <EquationStatic eq={q.eq} leftCoeffs={l} rightCoeffs={r} />,
+      });
+      scheduleAdvance(1300);
+    } else if (res.balanced && !res.simplest) {
+      // ミス扱いにはしないが、ここを無料にすると「全部2」で
+      // 係数が全部1の式をただで見分けられてしまうので、少しだけ削る
+      playInfo();
+      addLabMs(-cfg.nearMissPenaltyMs);
+      showToast("つり合っているが、もっと簡単な整数比にできる");
+      triggerShake();
+    } else {
+      markMissed();
+      addLabMs(-cfg.wrongPenaltyMs);
+      setHintOn(true);
+      triggerShake();
+      lockInputBriefly();
+    }
+  }
+
+  /** 無限ラボの数字入力。2桁まで積み上げる（係数が13や25になるため） */
+  function onTapDigit(d) {
+    const q = questionsRef.current[qIndexRef.current];
+    if (!q || q.kind !== "lab") return;
+    if (overlay || checkLock || inputLock) return;
+    if (!isEditableCoeffSlot(q, selPos.side, selPos.idx)) return;
+    const arr = selPos.side === "L" ? coeffL : coeffR;
+    const cur = arr[selPos.idx];
+    let next;
+    if (isNil(cur) || cur >= 10) next = d; // 空か、すでに2桁なら入れ直し
+    else next = cur * 10 + d;
+    if (!next) return; // 先頭の 0 は受け付けない
+    setCoeffValue(selPos.side, selPos.idx, next);
+  }
+
+  /** 無限ラボの1桁消し */
+  function onTapBackspace() {
+    const q = questionsRef.current[qIndexRef.current];
+    if (!q || q.kind !== "lab") return;
+    if (overlay || checkLock || inputLock) return;
+    const arr = selPos.side === "L" ? coeffL : coeffR;
+    const cur = arr[selPos.idx];
+    if (isNil(cur)) return;
+    const next = cur >= 10 ? Math.floor(cur / 10) : null;
+    setCoeffValue(selPos.side, selPos.idx, next);
   }
 
   /* ---------- 組み立てラボ ---------- */
@@ -2192,16 +2511,23 @@ export default function App() {
   const currentQ = questions[qIndex];
 
   function renderHeader() {
+    const isLab = mode === MODES.LAB;
+    const layer = isLab
+      ? Math.floor(clearedRef.current / MODE_CONFIG[MODES.LAB].questionsPerLayer) + 1
+      : 0;
     return (
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-xs font-bold text-white/55">
             {MODE_CONFIG[mode].title}
             {phase === "review" ? "（復習）" : ""}
+            {isLab ? "　第" + layer + "層" : ""}
           </div>
           <div className="text-lg font-bold tabular-nums text-white">
-            {qIndex + 1}
-            <span className="text-white/50"> / {questions.length}</span>
+            {isLab ? cleared : qIndex + 1}
+            <span className="text-white/50">
+              {isLab ? " 問クリア" : " / " + questions.length}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -2215,8 +2541,25 @@ export default function App() {
               ＋{penaltySec}s
             </span>
           ) : null}
+          {labBonus ? (
+            <span
+              key={labBonus.key}
+              className={
+                "rounded-full border px-2.5 py-1 text-xs font-bold animate-popin " +
+                (labBonus.ms > 0
+                  ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                  : "border-rose-400/40 bg-rose-500/15 text-rose-200")
+              }
+            >
+              {(labBonus.ms > 0 ? "＋" : "−") + Math.abs(Math.round(labBonus.ms / 1000)) + "s"}
+            </span>
+          ) : null}
           <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-lg font-extrabold tabular-nums text-white">
-            <ElapsedTime read={currentElapsedSec} />
+            {isLab ? (
+              <LabClock read={labRemainingMs} onExpire={finishRun} />
+            ) : (
+              <ElapsedTime read={currentElapsedSec} />
+            )}
             <span className="ml-0.5 text-xs font-bold text-white/50">s</span>
           </div>
           <button
@@ -2232,9 +2575,14 @@ export default function App() {
   }
 
   function renderProgressBar() {
-    const pct = questions.length
-      ? Math.round((qIndex / questions.length) * 100)
-      : 0;
+    let pct;
+    if (mode === MODES.LAB) {
+      // 終わりがないモードなので、代わりに「その層の進み具合」を出す
+      const per = MODE_CONFIG[MODES.LAB].questionsPerLayer;
+      pct = Math.round(((cleared % per) / per) * 100);
+    } else {
+      pct = questions.length ? Math.round((qIndex / questions.length) * 100) : 0;
+    }
     return (
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
         <div
@@ -2399,6 +2747,67 @@ export default function App() {
    * 数字キー＋操作ボタン。
    * opts: { checkFn, checkEnabled, padEnabled, showCheck, onClear, clearEnabled }
    */
+  /** 無限ラボ用のテンキー（2桁入力。係数が13や25になるため） */
+  function renderLabPad(opts) {
+    const enabled = opts.padEnabled !== false;
+    const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+    const keyClass =
+      "h-14 rounded-2xl border text-2xl font-bold transition " +
+      (enabled
+        ? "border-white/10 bg-white/10 text-white hover:bg-white/15 active:scale-[0.97]"
+        : "border-white/5 bg-white/[0.03] text-white/20");
+    return (
+      <div className="mx-auto mt-5 w-full max-w-md">
+        <div className="grid grid-cols-6 gap-2">
+          {keys.map(function (n) {
+            return (
+              <button
+                key={n}
+                type="button"
+                disabled={!enabled}
+                onClick={function () {
+                  onTapDigit(n);
+                }}
+                className={keyClass}
+              >
+                {n}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            disabled={!enabled}
+            onClick={onTapBackspace}
+            className={keyClass}
+            aria-label="1文字消す"
+          >
+            ⌫
+          </button>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={opts.onClear}
+            disabled={!opts.clearEnabled}
+            className={
+              "shrink-0 rounded-2xl border px-5 py-4 text-base font-bold transition active:scale-[0.99] " +
+              (opts.clearEnabled
+                ? "border-white/10 bg-white/5 text-white/85 hover:bg-white/10"
+                : "border-white/5 bg-white/[0.03] text-white/25")
+            }
+          >
+            クリア
+          </button>
+          <div className="flex-1">
+            <ActionButton onClick={opts.checkFn} disabled={!opts.checkEnabled}>
+              判定する
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderNumberPad(opts) {
     const nums = [1, 2, 3, 4, 5, 6];
     // padEnabled 省略時は有効（係数バランスは常に入力できる）
@@ -2499,6 +2908,45 @@ export default function App() {
           showCheck: blankCount !== 1,
           padEnabled: !inputLock,
           onClear: blankCount > 1 ? onClearCoeffs : null,
+          clearEnabled:
+            hasAnyCoeffInput(q) && !overlay && !checkLock && !inputLock,
+        })}
+      </div>
+    );
+  }
+
+  /* ----- 無限ラボ画面 ----- */
+
+  function renderLabRun(q) {
+    return (
+      <div className="mt-6">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Chip>{q.eq.cat}</Chip>
+          <span className="text-xs font-bold text-white/45">
+            第{q.layer}層
+          </span>
+        </div>
+        <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 px-4 py-8">
+          {renderCoeffEquation(q)}
+          {hintOn ? (
+            <AtomHintPanel eq={q.eq} leftCoeffs={coeffL} rightCoeffs={coeffR} />
+          ) : null}
+        </div>
+        <div
+          className={
+            "mt-2 text-center text-[11px] font-bold " +
+            (inputLock ? "text-amber-200/80" : "text-white/45")
+          }
+        >
+          {inputLock
+            ? "左右の原子の数を確かめよう…"
+            : "マスを選んで数字をタップ（2桁も入力できる。係数 1 も入力する）"}
+        </div>
+        {renderLabPad({
+          checkFn: onCheckCoeff,
+          checkEnabled: allCoeffFilled(q) && !overlay && !checkLock && !inputLock,
+          padEnabled: !inputLock,
+          onClear: onClearCoeffs,
           clearEnabled:
             hasAnyCoeffInput(q) && !overlay && !checkLock && !inputLock,
         })}
@@ -2722,7 +3170,11 @@ export default function App() {
      ボタン自体も横幅いっぱいには広げない（当たり判定を小さくする）。
      さらに誤タップ防止のため2度押し式にしてある */
   function renderSkipButton() {
-    const penalty = MODE_CONFIG[mode].skipPenalty;
+    const isLab = mode === MODES.LAB;
+    const penalty = isLab
+      ? Math.round(MODE_CONFIG[MODES.LAB].skipPenaltyMs / 1000)
+      : MODE_CONFIG[mode].skipPenalty;
+    const mark = isLab ? "−" : "＋";
     const disabled = !!overlay || checkLock;
     let tone =
       "border-white/10 bg-white/[0.04] text-white/45 hover:bg-white/10 hover:text-white/75";
@@ -2741,8 +3193,8 @@ export default function App() {
           }
         >
           {skipArmed
-            ? "もう一度タップでスキップ（＋" + penalty + "秒）"
-            : "わからない（スキップ ＋" + penalty + "秒）"}
+            ? "もう一度タップでスキップ（" + mark + penalty + "秒）"
+            : "わからない（スキップ " + mark + penalty + "秒）"}
         </button>
       </div>
     );
@@ -2755,6 +3207,7 @@ export default function App() {
     let body = null;
     if (currentQ.kind === "formula") body = renderFormulaRun(currentQ);
     if (currentQ.kind === "coeff") body = renderCoeffRun(currentQ);
+    if (currentQ.kind === "lab") body = renderLabRun(currentQ);
     if (currentQ.kind === "judge") body = renderJudgeRun(currentQ);
     if (currentQ.kind === "build") body = renderBuildRun(currentQ);
     return (
@@ -2800,7 +3253,9 @@ export default function App() {
     }
     return (
       <div key={i} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5">
-        <div className="text-[11px] font-bold text-white/50">{q.eq.desc}</div>
+        <div className="text-[11px] font-bold text-white/50">
+          {coalesce(q.eq.desc, q.eq.cat)}
+        </div>
         <div className="mt-1 text-center">
           <EquationStatic eq={q.eq} size="text-base sm:text-lg" />
         </div>
@@ -2820,9 +3275,13 @@ export default function App() {
 
   function renderResult() {
     if (!lastResult) return null;
+    const isLab = lastResult.mode === MODES.LAB;
     const gr = gradeFor(lastResult.mode, lastResult.sec);
     const missed = lastResult.missedQuestions;
-    const next = lastResult.phase === "main" ? nextRankInfo(lastResult.mode, lastResult.sec) : null;
+    const next =
+      lastResult.phase === "main" && !isLab
+        ? nextRankInfo(lastResult.mode, lastResult.sec)
+        : null;
     // 誤答・スキップ数は lastResult（確定値）から読む
     const missCount = coalesce(lastResult.wrongTaps, wrongTaps);
     const skipCount = coalesce(lastResult.skips, 0);
@@ -2860,9 +3319,19 @@ export default function App() {
             {lastResult.phase === "review" ? "（復習）" : ""}
           </div>
           <div className="mt-4 text-6xl font-extrabold tabular-nums text-white">
-            {formatSeconds(lastResult.sec)}
-            <span className="ml-1 text-2xl text-white/50">s</span>
+            {isLab ? lastResult.sec : formatSeconds(lastResult.sec)}
+            <span className="ml-1 text-2xl text-white/50">{isLab ? "問" : "s"}</span>
           </div>
+          {isLab ? (
+            <div className="mt-1 text-xs font-bold text-white/50">
+              第
+              {Math.floor(
+                Math.max(0, lastResult.sec - 1) /
+                  MODE_CONFIG[MODES.LAB].questionsPerLayer
+              ) + 1}
+              層まで到達
+            </div>
+          ) : null}
           {lastResult.phase === "main" ? (
             <div
               className={
@@ -2916,6 +3385,17 @@ export default function App() {
                 : "まずは復習モードで、解ける問題を増やしてみよう。"}
             </div>
           ) : null}
+          {lastResult.unlockedDeep ? (
+            <div className="mt-4 rounded-2xl border border-emerald-300/50 bg-gradient-to-r from-emerald-500/20 via-sky-500/20 to-violet-500/20 px-4 py-4 animate-popin">
+              <div className="text-xl font-bold text-emerald-200 [text-shadow:0_0_14px_rgba(52,211,153,0.5)]">
+                ✨ 真の裏モード解放！！
+              </div>
+              <div className="mt-1.5 text-xs font-bold leading-relaxed text-white/80">
+                STEP3・STEP4 もSランク達成。終わりのない「無限ラボ」が
+                プレイ可能になった！
+              </div>
+            </div>
+          ) : null}
           {lastResult.unlockedSecret ? (
             <div className="mt-4 rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-violet-500/20 px-4 py-4 animate-popin">
               <div className="text-xl font-bold text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.5)]">
@@ -2928,7 +3408,7 @@ export default function App() {
             </div>
           ) : null}
           <div className="mt-4 text-xs font-bold text-white/50">
-            誤答：{missCount} 回
+            {isLab ? "落とした問題" : "誤答"}：{missCount} 回
             {skipCount > 0 ? " ／ スキップ：" + skipCount + " 回" : ""} ／
             最大コンボ：{coalesce(lastResult.maxStreak, 0)}
           </div>
@@ -2946,13 +3426,13 @@ export default function App() {
         ) : null}
 
         <div className="mt-5 space-y-3">
-          {missed.length > 0 ? (
+          {missed.length > 0 && !isLab ? (
             <ActionButton onClick={startReview}>
               復習する（間違えた {missed.length} 問）
             </ActionButton>
           ) : null}
           <ActionButton
-            variant={missed.length > 0 ? "secondary" : "primary"}
+            variant={missed.length > 0 && !isLab ? "secondary" : "primary"}
             onClick={function () {
               startMode(lastResult.mode);
             }}
@@ -2971,6 +3451,7 @@ export default function App() {
 
   function renderHome() {
     const secretUnlocked = isSecretUnlocked(bestByMode);
+    const deepUnlocked = isDeepSecretUnlocked(bestByMode);
     return (
       <div className="mx-auto w-full max-w-2xl px-4 pb-16 pt-8 sm:px-6">
         <div className="flex items-start justify-between gap-4">
@@ -3109,6 +3590,28 @@ export default function App() {
               スタート
             </StartButton>
           </ModeCard>
+
+          <div className="sm:col-span-2">
+            <ModeCard
+              step={deepUnlocked ? "FINAL" : "🔒 真の裏モード"}
+              locked={!deepUnlocked}
+              accent="emerald"
+              title="無限ラボ"
+              detail="教科書にない反応式も出てくる、終わりのないサバイバル。持ち時間60秒から始まり、1問正解するごとに時間が増える。層が上がるほど反応式は難しく、増える時間は短くなる。何問クリアできるかを競う。"
+            >
+              <StartButton
+                accent="emerald"
+                mode={MODES.LAB}
+                best={bestByMode[MODES.LAB]}
+                inert={!deepUnlocked}
+                onClick={function () {
+                  startMode(MODES.LAB);
+                }}
+              >
+                スタート
+              </StartButton>
+            </ModeCard>
+          </div>
         </div>
 
         <div className="mt-6 text-center text-[11px] leading-relaxed text-white/35">
@@ -3117,6 +3620,8 @@ export default function App() {
           係数は「最も簡単な整数比」で入力（1 も入力する）
           <br />
           中学範囲の頻出化学反応式（イオン反応式を除く）を収録
+          <br />
+          無限ラボだけは中学範囲外の反応式も自動生成して出題
         </div>
       </div>
     );
