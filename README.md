@@ -231,7 +231,12 @@ npm run dev       # 開発サーバー
 npm run validate  # 出題データの検証
 npm run build     # 本番ビルド（dist/）
 npm run preview   # ビルドの確認
+npm run xlsx      # STEP1 の出題物質一覧を Excel に書き出す
 ```
+
+`npm run xlsx` は `src/data.js` を読んで `docs/STEP1_化学式マッチ_出題一覧.xlsx` を作り直します
+（授業のプリント用。Python の openpyxl が必要：`pip install openpyxl`）。
+物質を足したり `q` を変えたりしたら流し直してください。
 
 ## Cloudflare Pages へのデプロイ
 
