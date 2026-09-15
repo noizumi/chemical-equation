@@ -414,6 +414,64 @@ var SPECIALS = [
 var MAX_COEFF = 25;
 
 /**
+ * 目算法（原子を順に数えるやり方）で解けるかを判定する。
+ *
+ * 「ある元素について、係数がまだ決まっていない物質が1つしか残っていない」なら、
+ * その係数はその場で確定できる。これを繰り返して全部決まれば目算法で解ける。
+ * どこかで詰まる反応は、未定係数法（連立方程式）か酸化数の知識が必要になる。
+ *
+ * 例：Cu + 4HNO3 → Cu(NO3)2 + 2NO2 + 2H2O は、窒素が硝酸イオンと二酸化窒素の
+ * 2つに分かれるため、どの元素を見ても未知数が2つ以上残って詰まる。
+ * 中学生には手が出ないので、こうした反応は出題しない。
+ */
+function solvableByInspection(left, right, coeffs) {
+  var species = left.concat(right);
+  var i, j;
+  var sign = [];
+  var atoms = [];
+  var elements = [];
+  for (i = 0; i < species.length; i++) {
+    sign.push(i < left.length ? 1 : -1);
+    var a = parseFormula(species[i]);
+    atoms.push(a);
+    for (var el in a) {
+      if (Object.prototype.hasOwnProperty.call(a, el) && elements.indexOf(el) < 0) {
+        elements.push(el);
+      }
+    }
+  }
+  // どの物質から数え始めても解けないなら、目算法では解けない
+  for (var start = 0; start < species.length; start++) {
+    var c = [];
+    for (i = 0; i < species.length; i++) c.push(null);
+    c[start] = coeffs[start];
+    var progress = true;
+    while (progress) {
+      progress = false;
+      for (j = 0; j < elements.length; j++) {
+        var e = elements[j];
+        var idx = [];
+        for (i = 0; i < species.length; i++) if (atoms[i][e]) idx.push(i);
+        var unknown = [];
+        for (i = 0; i < idx.length; i++) if (c[idx[i]] === null) unknown.push(idx[i]);
+        if (unknown.length !== 1) continue;
+        var u = unknown[0];
+        var sum = 0;
+        for (i = 0; i < idx.length; i++) {
+          if (idx[i] !== u) sum += atoms[idx[i]][e] * sign[idx[i]] * c[idx[i]];
+        }
+        c[u] = -sum / (atoms[u][e] * sign[u]);
+        progress = true;
+      }
+    }
+    var done = true;
+    for (i = 0; i < c.length; i++) if (c[i] === null) done = false;
+    if (done) return true;
+  }
+  return false;
+}
+
+/**
  * 反応式を1つ作る。
  *
  * kind は「頭の使い方」の分類：
@@ -432,6 +490,8 @@ function makeEq(id, cat, kind, l, r) {
   var i;
   for (i = 0; i < b.left.length; i++) if (b.left[i] > MAX_COEFF) return null;
   for (i = 0; i < b.right.length; i++) if (b.right[i] > MAX_COEFF) return null;
+  // 目算法で解けない反応（酸化還元で元素が2手に分かれるものなど）は出さない
+  if (!solvableByInspection(l, r, b.left.concat(b.right))) return null;
   var left = [];
   var right = [];
   var sum = 0;

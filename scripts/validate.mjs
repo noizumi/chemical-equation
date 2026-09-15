@@ -160,6 +160,37 @@ console.log(
 );
 
 /* ---- 無限ラボ（自動生成）の検査 ---- */
+
+/* 目算法で解けるか。「ある元素について係数未定の物質が1つだけ」なら確定できる、
+   を繰り返して全部決まるかを見る。詰まる反応は未定係数法が必要＝中学生には無理 */
+function inspectable(e) {
+  const species = e.left.concat(e.right);
+  const sign = species.map((_, i) => (i < e.left.length ? 1 : -1));
+  const atoms = species.map((t) => parseFormula(t.formula));
+  const elements = [...new Set(atoms.flatMap((a) => Object.keys(a)))];
+  for (let start = 0; start < species.length; start++) {
+    const c = species.map(() => null);
+    c[start] = species[start].coeff;
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (const el of elements) {
+        const idx = [];
+        for (let i = 0; i < species.length; i++) if (atoms[i][el]) idx.push(i);
+        const unknown = idx.filter((i) => c[i] === null);
+        if (unknown.length !== 1) continue;
+        const u = unknown[0];
+        let sum = 0;
+        for (const i of idx) if (i !== u) sum += atoms[i][el] * sign[i] * c[i];
+        c[u] = -sum / (atoms[u][el] * sign[u]);
+        progress = true;
+      }
+    }
+    if (c.every((v) => v !== null)) return true;
+  }
+  return false;
+}
+
 const gen = generated();
 const genIds = new Set();
 const genKeys = new Set();
@@ -173,6 +204,9 @@ for (const e of gen) {
     e.right.map((t) => t.coeff + t.formula).join(" + ");
   if (!res.balanced) fail("生成した反応式がつり合わない: " + e.id + " " + show);
   if (!res.simplest) fail("生成した反応式が最簡整数比でない: " + e.id + " " + show);
+  if (!inspectable(e)) {
+    fail("目算法で解けない反応式（未定係数法が必要）: " + e.id + " " + show);
+  }
   for (const t of e.left.concat(e.right)) {
     try {
       parseFormula(t.formula);

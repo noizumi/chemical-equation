@@ -863,17 +863,24 @@ function makeLabQuestion(layer) {
 /**
  * 無限ラボで1問正解したときに増える持ち時間（ミリ秒）
  *
- * 想定している解答時間は 第1層10秒 → 第4層15秒。
- * 加算はそれより3秒ほど長くしてあり、正確でありさえすれば
- * ゆっくり考えても詰まらない（瞬発力ゲームにしないため）。
- * 5層目からは3秒ずつ減っていき、いつかは必ず時間切れになる。
+ * 加算は「層」ではなく「その反応式の重さ」で決める。
+ * 4FeS2 + 11O2 → 2Fe2O3 + 8SO2 と SnO2 + C → Sn + CO2 では
+ * かかる時間がまるで違うので、層でひとくくりにすると
+ * 重い式を引いたときだけ理不尽に苦しくなってしまう。
  *
+ * 重さの目安は「係数の余剰」＝係数の合計−物質数。
+ * 1 以外の係数をどれだけ書くことになるかで、解答時間によく比例する。
+ * 想定解答時間をおよそ 8秒＋0.6秒×余剰 とみて、その1.25倍を返す。
+ *
+ * 層が上がると倍率が下がっていき、いつかは必ず時間切れになる。
  * ここと LAB_MAX_BANK_MS を触れば、全体の長さを調整できる。
  */
-function labBonusMs(layer) {
-  const table = [13000, 15000, 17000, 18000];
-  if (layer <= 4) return table[layer - 1];
-  return Math.max(4000, 18000 - 3000 * (layer - 4));
+function labBonusMs(layer, excess) {
+  const weight = typeof excess === "number" && isFinite(excess) ? excess : 0;
+  const base = Math.min(36000, 12000 + 750 * weight);
+  const factor = layer <= 4 ? 1 : Math.max(0.35, 1 - 0.13 * (layer - 4));
+  // 表示と実際がずれないよう、秒単位に丸めておく
+  return Math.round((base * factor) / 1000) * 1000;
 }
 
 /* 持ち時間の上限。上限がないと、早く解ける生徒ほど貯金が増え続けて
@@ -2242,7 +2249,7 @@ export default function App() {
       onSolved();
       clearedRef.current += 1;
       setCleared(clearedRef.current);
-      const bonus = labBonusMs(q.layer);
+      const bonus = labBonusMs(q.layer, q.eq.excess);
       addLabMs(bonus);
       pauseTimer();
       setCheckLock(true);
@@ -2980,8 +2987,11 @@ export default function App() {
       <div className="mt-6">
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Chip>{q.eq.cat}</Chip>
-          <span className="text-xs font-bold text-white/45">
-            第{q.layer}層
+          <span className="text-xs font-bold text-white/45">第{q.layer}層</span>
+          {/* 重い式ほど加算が大きいことを先に見せる。
+              「これは時間をかけていい問題だ」と分かるように */}
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-200/90">
+            正解で ＋{Math.round(labBonusMs(q.layer, q.eq.excess) / 1000)}秒
           </span>
         </div>
         <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 px-4 py-8">
