@@ -278,37 +278,134 @@ var BURNABLES = [
   { f: "C6H12O6", name: "ブドウ糖" },
 ];
 
+/* ================= 数えて求める系の反応 =================
+ * 価数が分かれば係数が決まる反応（中和・炭酸塩＋酸など）と違い、
+ * 原子を順に数えないと係数が出ないもの。無限ラボの深い層はこちらを中心に出す。
+ * 高校範囲の反応も入れるが、実在すること・目算法で解けることは確認済み。
+ */
+var COUNTING = [
+  /* --- 不完全燃焼（酸素が足りないとき）。一酸化炭素ができる --- */
+  ["CH4", "O2", "CO", "H2O"],
+  ["C2H6", "O2", "CO", "H2O"],
+  ["C2H4", "O2", "CO", "H2O"],
+  ["C3H8", "O2", "CO", "H2O"],
+  ["C4H10", "O2", "CO", "H2O"],
+  ["C6H6", "O2", "CO", "H2O"],
+  ["C8H18", "O2", "CO", "H2O"],
+  ["C2H6O", "O2", "CO", "H2O"],
+];
+
+/* 分類名つきで持つ反応。l=左辺, r=右辺 */
+var EXTRA = [
+  /* --- 硫化鉱の焙焼（鉱石を空気中で強く熱する）--- */
+  { l: ["ZnS", "O2"], r: ["ZnO", "SO2"], cat: "焙焼" },
+  { l: ["PbS", "O2"], r: ["PbO", "SO2"], cat: "焙焼" },
+  { l: ["FeS", "O2"], r: ["Fe2O3", "SO2"], cat: "焙焼" },
+  { l: ["FeS2", "O2"], r: ["Fe2O3", "SO2"], cat: "焙焼" }, // 黄鉄鉱。係数 4,11,2,8
+  { l: ["Cu2S", "O2"], r: ["Cu", "SO2"], cat: "焙焼" },
+  { l: ["Ag2S", "O2"], r: ["Ag", "SO2"], cat: "焙焼" },
+  { l: ["HgS", "O2"], r: ["Hg", "SO2"], cat: "焙焼" }, // 辰砂からの水銀の製造
+
+  /* --- 還元（炭素・一酸化炭素・水素・アルミニウム）--- */
+  { l: ["SnO2", "C"], r: ["Sn", "CO2"], cat: "還元" },
+  { l: ["MnO2", "C"], r: ["Mn", "CO2"], cat: "還元" },
+  { l: ["SnO2", "H2"], r: ["Sn", "H2O"], cat: "還元" },
+  { l: ["Fe3O4", "H2"], r: ["Fe", "H2O"], cat: "還元" },
+  { l: ["SiO2", "C"], r: ["Si", "CO"], cat: "還元" }, // ケイ素の製造。CO ができる
+  // テルミット反応（アルミニウムで金属を取り出す）
+  { l: ["Fe2O3", "Al"], r: ["Al2O3", "Fe"], cat: "還元" },
+  { l: ["Fe3O4", "Al"], r: ["Al2O3", "Fe"], cat: "還元" },
+  { l: ["Cr2O3", "Al"], r: ["Al2O3", "Cr"], cat: "還元" },
+  { l: ["MnO2", "Al"], r: ["Al2O3", "Mn"], cat: "還元" },
+  { l: ["CuO", "Al"], r: ["Al2O3", "Cu"], cat: "還元" },
+
+  /* --- 加熱による分解（気体が発生する）--- */
+  { l: ["KClO3"], r: ["KCl", "O2"], cat: "分解" }, // 酸素の発生（定番）
+  { l: ["KMnO4"], r: ["K2MnO4", "MnO2", "O2"], cat: "分解" },
+  { l: ["NaNO3"], r: ["NaNO2", "O2"], cat: "分解" },
+  { l: ["NaN3"], r: ["Na", "N2"], cat: "分解" }, // エアバッグ
+  { l: ["NH4NO3"], r: ["N2O", "H2O"], cat: "分解" },
+  { l: ["(NH4)2Cr2O7"], r: ["N2", "Cr2O3", "H2O"], cat: "分解" },
+  { l: ["NH4Cl", "Ca(OH)2"], r: ["CaCl2", "NH3", "H2O"], cat: "気体の発生" }, // アンモニアの発生
+
+  /* --- 金属と水 --- */
+  { l: ["Na", "H2O"], r: ["NaOH", "H2"], cat: "気体の発生" },
+  { l: ["K", "H2O"], r: ["KOH", "H2"], cat: "気体の発生" },
+  { l: ["Ca", "H2O"], r: ["Ca(OH)2", "H2"], cat: "気体の発生" },
+  { l: ["Mg", "H2O"], r: ["Mg(OH)2", "H2"], cat: "気体の発生" },
+  { l: ["Fe", "H2O"], r: ["Fe3O4", "H2"], cat: "気体の発生" }, // 高温の水蒸気と鉄
+
+  /* --- 工業的製法・気体の化学（高校範囲）--- */
+  { l: ["NH3", "O2"], r: ["NO", "H2O"], cat: "工業" }, // オストワルト法
+  { l: ["NO", "O2"], r: ["NO2"], cat: "工業" },
+  { l: ["NO2", "H2O"], r: ["HNO3", "NO"], cat: "工業" },
+  { l: ["SO2", "O2"], r: ["SO3"], cat: "工業" }, // 接触法
+  { l: ["N2", "O2"], r: ["NO"], cat: "工業" },
+  { l: ["CH4", "H2O"], r: ["CO", "H2"], cat: "工業" }, // 水蒸気改質
+  { l: ["CO", "H2O"], r: ["CO2", "H2"], cat: "工業" },
+  { l: ["C", "H2O"], r: ["CO", "H2"], cat: "工業" }, // 水性ガス
+  { l: ["NaCl", "NH3", "CO2", "H2O"], r: ["NaHCO3", "NH4Cl"], cat: "工業" }, // アンモニアソーダ法
+  { l: ["Cu", "H2SO4"], r: ["CuSO4", "SO2", "H2O"], cat: "工業" }, // 熱濃硫酸
+  { l: ["Cu", "HNO3"], r: ["Cu(NO3)2", "NO2", "H2O"], cat: "工業" }, // 濃硝酸
+
+  /* --- 電気分解の全体の反応 --- */
+  { l: ["NaCl", "H2O"], r: ["NaOH", "H2", "Cl2"], cat: "電気分解" },
+  { l: ["Al2O3"], r: ["Al", "O2"], cat: "電気分解" },
+
+  /* --- リン・ケイ素 --- */
+  { l: ["P", "O2"], r: ["P2O5"], cat: "化合" },
+  { l: ["P2O5", "H2O"], r: ["H3PO4"], cat: "化合" },
+  { l: ["H3PO4", "Ca(OH)2"], r: ["Ca3(PO4)2", "H2O"], cat: "中和" },
+  { l: ["H3PO4", "NaOH"], r: ["Na3PO4", "H2O"], cat: "中和" },
+
+  /* --- 生き物の化学 --- */
+  { l: ["CO2", "H2O"], r: ["C6H12O6", "O2"], cat: "光合成" },
+  { l: ["C6H12O6"], r: ["C2H6O", "CO2"], cat: "発酵" },
+
+  /* --- 身のまわりの反応 --- */
+  { l: ["Ca(OH)2", "CO2"], r: ["CaCO3", "H2O"], cat: "中和" }, // 石灰水がにごる
+  { l: ["NaOH", "CO2"], r: ["Na2CO3", "H2O"], cat: "中和" },
+  { l: ["Fe", "O2", "H2O"], r: ["Fe(OH)3"], cat: "酸化" }, // 鉄がさびる
+
+  /* --- 大きい有機分子の燃焼 --- */
+  { l: ["C10H8", "O2"], r: ["CO2", "H2O"], cat: "燃焼" }, // ナフタレン
+  { l: ["C12H22O11", "O2"], r: ["CO2", "H2O"], cat: "燃焼" }, // スクロース（砂糖）
+  { l: ["CH4O", "O2"], r: ["CO2", "H2O"], cat: "燃焼" }, // メタノール
+  { l: ["C3H6O", "O2"], r: ["CO2", "H2O"], cat: "燃焼" }, // アセトン
+  { l: ["C4H10O", "O2"], r: ["CO2", "H2O"], cat: "燃焼" },
+];
+
 // 族にきれいに収まらない、よく出る反応
 var SPECIALS = [
-  { l: ["Fe", "O2"], r: ["Fe3O4"], cat: "化合", layer: 1 },
-  { l: ["H2", "O2"], r: ["H2O"], cat: "化合", layer: 1 },
-  { l: ["N2", "H2"], r: ["NH3"], cat: "化合", layer: 1 },
-  { l: ["Na2O", "H2O"], r: ["NaOH"], cat: "化合", layer: 1 },
-  { l: ["K2O", "H2O"], r: ["KOH"], cat: "化合", layer: 1 },
-  { l: ["CaO", "H2O"], r: ["Ca(OH)2"], cat: "化合", layer: 1 },
-  { l: ["BaO", "H2O"], r: ["Ba(OH)2"], cat: "化合", layer: 1 },
-  { l: ["CO2", "H2O"], r: ["H2CO3"], cat: "化合", layer: 1 },
-  { l: ["SO2", "H2O"], r: ["H2SO3"], cat: "化合", layer: 1 },
-  { l: ["SO3", "H2O"], r: ["H2SO4"], cat: "化合", layer: 1 },
-  { l: ["S", "O2"], r: ["SO2"], cat: "燃焼", layer: 1 },
-  { l: ["C", "O2"], r: ["CO2"], cat: "燃焼", layer: 1 },
-  { l: ["NaHCO3"], r: ["Na2CO3", "H2O", "CO2"], cat: "分解", layer: 3 },
-  { l: ["H2O2"], r: ["H2O", "O2"], cat: "分解", layer: 1 },
-  { l: ["H2O"], r: ["H2", "O2"], cat: "分解", layer: 1 },
-  { l: ["Ag2O"], r: ["Ag", "O2"], cat: "分解", layer: 1 },
-  { l: ["NH3", "O2"], r: ["N2", "H2O"], cat: "燃焼", layer: 3 },
-  { l: ["H2S", "O2"], r: ["SO2", "H2O"], cat: "燃焼", layer: 3 },
+  { l: ["Fe", "O2"], r: ["Fe3O4"], cat: "化合" },
+  { l: ["H2", "O2"], r: ["H2O"], cat: "化合" },
+  { l: ["N2", "H2"], r: ["NH3"], cat: "化合" },
+  { l: ["Na2O", "H2O"], r: ["NaOH"], cat: "化合" },
+  { l: ["K2O", "H2O"], r: ["KOH"], cat: "化合" },
+  { l: ["CaO", "H2O"], r: ["Ca(OH)2"], cat: "化合" },
+  { l: ["BaO", "H2O"], r: ["Ba(OH)2"], cat: "化合" },
+  { l: ["CO2", "H2O"], r: ["H2CO3"], cat: "化合" },
+  { l: ["SO2", "H2O"], r: ["H2SO3"], cat: "化合" },
+  { l: ["SO3", "H2O"], r: ["H2SO4"], cat: "化合" },
+  { l: ["S", "O2"], r: ["SO2"], cat: "燃焼" },
+  { l: ["C", "O2"], r: ["CO2"], cat: "燃焼" },
+  { l: ["NaHCO3"], r: ["Na2CO3", "H2O", "CO2"], cat: "分解" },
+  { l: ["H2O2"], r: ["H2O", "O2"], cat: "分解" },
+  { l: ["H2O"], r: ["H2", "O2"], cat: "分解" },
+  { l: ["Ag2O"], r: ["Ag", "O2"], cat: "分解" },
+  { l: ["NH3", "O2"], r: ["N2", "H2O"], cat: "燃焼" },
+  { l: ["H2S", "O2"], r: ["SO2", "H2O"], cat: "燃焼" },
   // 還元（炭素・水素・一酸化炭素で金属を取り出す）
-  { l: ["CuO", "H2"], r: ["Cu", "H2O"], cat: "還元", layer: 2 },
-  { l: ["CuO", "C"], r: ["Cu", "CO2"], cat: "還元", layer: 2 },
-  { l: ["CuO", "CO"], r: ["Cu", "CO2"], cat: "還元", layer: 2 },
-  { l: ["ZnO", "C"], r: ["Zn", "CO2"], cat: "還元", layer: 2 },
-  { l: ["PbO", "C"], r: ["Pb", "CO2"], cat: "還元", layer: 2 },
-  { l: ["Fe2O3", "C"], r: ["Fe", "CO2"], cat: "還元", layer: 3 },
-  { l: ["Fe3O4", "C"], r: ["Fe", "CO2"], cat: "還元", layer: 3 },
-  { l: ["Fe2O3", "CO"], r: ["Fe", "CO2"], cat: "還元", layer: 3 },
-  { l: ["Fe3O4", "CO"], r: ["Fe", "CO2"], cat: "還元", layer: 3 },
-  { l: ["Fe2O3", "H2"], r: ["Fe", "H2O"], cat: "還元", layer: 3 },
+  { l: ["CuO", "H2"], r: ["Cu", "H2O"], cat: "還元" },
+  { l: ["CuO", "C"], r: ["Cu", "CO2"], cat: "還元" },
+  { l: ["CuO", "CO"], r: ["Cu", "CO2"], cat: "還元" },
+  { l: ["ZnO", "C"], r: ["Zn", "CO2"], cat: "還元" },
+  { l: ["PbO", "C"], r: ["Pb", "CO2"], cat: "還元" },
+  { l: ["Fe2O3", "C"], r: ["Fe", "CO2"], cat: "還元" },
+  { l: ["Fe3O4", "C"], r: ["Fe", "CO2"], cat: "還元" },
+  { l: ["Fe2O3", "CO"], r: ["Fe", "CO2"], cat: "還元" },
+  { l: ["Fe3O4", "CO"], r: ["Fe", "CO2"], cat: "還元" },
+  { l: ["Fe2O3", "H2"], r: ["Fe", "H2O"], cat: "還元" },
 ];
 
 /* ================= カタログの組み立て ================= */
@@ -316,7 +413,20 @@ var SPECIALS = [
 // 係数がこれを超える反応式は出さない（テンキーは2桁まで）
 var MAX_COEFF = 25;
 
-function makeEq(id, cat, layer, l, r) {
+/**
+ * 反応式を1つ作る。
+ *
+ * kind は「頭の使い方」の分類：
+ *  - "valence" … イオンの価数が分かれば係数まで決まってしまうもの
+ *                （中和・炭酸塩＋酸・金属＋非金属 など）
+ *  - "count"   … 原子を順に数えないと係数が出ないもの
+ *                （燃焼・還元・焙焼 など）
+ *
+ * layer（難度）は「係数の余剰」＝係数の合計−物質数から自動で決める。
+ * 1 以外の係数をどれだけ書くことになるかの目安で、体感の難しさによく合う。
+ * 価数で決まるものは、係数が大きくても手は動かないので層2どまりにする。
+ */
+function makeEq(id, cat, kind, l, r) {
   var b = balance(l, r);
   if (!b) return null;
   var i;
@@ -324,9 +434,31 @@ function makeEq(id, cat, layer, l, r) {
   for (i = 0; i < b.right.length; i++) if (b.right[i] > MAX_COEFF) return null;
   var left = [];
   var right = [];
-  for (i = 0; i < l.length; i++) left.push({ coeff: b.left[i], formula: l[i] });
-  for (i = 0; i < r.length; i++) right.push({ coeff: b.right[i], formula: r[i] });
-  return { id: id, cat: cat, layer: layer, left: left, right: right };
+  var sum = 0;
+  for (i = 0; i < l.length; i++) {
+    left.push({ coeff: b.left[i], formula: l[i] });
+    sum += b.left[i];
+  }
+  for (i = 0; i < r.length; i++) {
+    right.push({ coeff: b.right[i], formula: r[i] });
+    sum += b.right[i];
+  }
+  var excess = sum - (l.length + r.length);
+  var layer;
+  if (kind === "valence") {
+    layer = excess <= 1 ? 1 : 2;
+  } else {
+    layer = excess <= 2 ? 2 : excess <= 7 ? 3 : 4;
+  }
+  return {
+    id: id,
+    cat: cat,
+    kind: kind,
+    excess: excess,
+    layer: layer,
+    left: left,
+    right: right,
+  };
 }
 
 function buildCatalog() {
@@ -345,7 +477,7 @@ function buildCatalog() {
         makeEq(
           "cb_" + fam.sub + "_" + fam.metals[j],
           "化合",
-          1,
+          "valence",
           [cat.f, fam.sub],
           [saltFormula(cat, fam.an)]
         )
@@ -360,7 +492,7 @@ function buildCatalog() {
       makeEq(
         "dcc_" + DECOMP_CARBONATE[i],
         "分解",
-        1,
+        "valence",
         [saltFormula(dc, ANIONS.CO3)],
         [saltFormula(dc, ANIONS.O), "CO2"]
       )
@@ -373,7 +505,7 @@ function buildCatalog() {
       makeEq(
         "dch_" + DECOMP_HYDROXIDE[i],
         "分解",
-        1,
+        "valence",
         [hydroxideFormula(dh)],
         [saltFormula(dh, ANIONS.O), "H2O"]
       )
@@ -389,7 +521,7 @@ function buildCatalog() {
         makeEq(
           "nt_" + ACIDS_ALL[i] + "_" + BASE_CATIONS[j],
           "中和",
-          2,
+          "valence",
           [an.acid, hydroxideFormula(bc)],
           [saltFormula(bc, an), "H2O"]
         )
@@ -406,7 +538,7 @@ function buildCatalog() {
         makeEq(
           "ox_" + ACIDS_STRONGISH[i] + "_" + OXIDE_CATIONS[j],
           "酸化物と酸",
-          2,
+          "valence",
           [saltFormula(oc, ANIONS.O), an2.acid],
           [saltFormula(oc, an2), "H2O"]
         )
@@ -423,7 +555,7 @@ function buildCatalog() {
         makeEq(
           "cbn_" + ACIDS_STRONGISH[i] + "_" + CARBONATE_CATIONS[j],
           "気体の発生",
-          3,
+          "valence",
           [saltFormula(cc2, ANIONS.CO3), an3.acid],
           [saltFormula(cc2, an3), "H2O", "CO2"]
         )
@@ -441,7 +573,7 @@ function buildCatalog() {
         makeEq(
           "ma_" + ACTIVE_METALS[i] + "_" + acidKeys[j],
           "気体の発生",
-          3,
+          "valence",
           [am.f, an4.acid],
           [saltFormula(am, an4), "H2"]
         )
@@ -452,14 +584,26 @@ function buildCatalog() {
   // 有機物の燃焼（係数が2桁になる）
   for (i = 0; i < BURNABLES.length; i++) {
     push(
-      makeEq("bn_" + BURNABLES[i].f, "燃焼", 4, [BURNABLES[i].f, "O2"], ["CO2", "H2O"])
+      makeEq("bn_" + BURNABLES[i].f, "燃焼", "count", [BURNABLES[i].f, "O2"], ["CO2", "H2O"])
     );
+  }
+
+  // 不完全燃焼（酸素が足りないとき）
+  for (i = 0; i < COUNTING.length; i++) {
+    var ic = COUNTING[i];
+    push(makeEq("ic_" + ic[0], "不完全燃焼", "count", [ic[0], ic[1]], [ic[2], ic[3]]));
+  }
+
+  // 数えて求める系の反応
+  for (i = 0; i < EXTRA.length; i++) {
+    var ex = EXTRA[i];
+    push(makeEq("ex_" + i, ex.cat, "count", ex.l, ex.r));
   }
 
   // 個別に持っている反応
   for (i = 0; i < SPECIALS.length; i++) {
     var sp = SPECIALS[i];
-    push(makeEq("sp_" + i, sp.cat, sp.layer, sp.l, sp.r));
+    push(makeEq("sp_" + i, sp.cat, "count", sp.l, sp.r));
   }
 
   return out;
@@ -472,31 +616,52 @@ export function allGenerated() {
   return CATALOG;
 }
 
-/**
- * 層に対応する反応式の候補。
- * 5層目から先は「全部から」ではなく、難しい第3・第4層だけから出す。
- * 全部から出すと簡単な式が混ざって1問あたりの時間が下がり、
- * 持ち時間の加算が減っていっても終わらなくなってしまうため。
- */
-export function poolForLayer(layer) {
+/** その層ちょうどの反応式 */
+function poolOfLayer(layer) {
   var pool = [];
-  var i;
-  if (layer >= 5) {
-    for (i = 0; i < CATALOG.length; i++) {
-      if (CATALOG[i].layer >= 3) pool.push(CATALOG[i]);
-    }
-    return pool;
-  }
-  for (i = 0; i < CATALOG.length; i++) {
+  for (var i = 0; i < CATALOG.length; i++) {
     if (CATALOG[i].layer === layer) pool.push(CATALOG[i]);
   }
+  return pool;
+}
+
+/** 深い層で出す、歯ごたえのある反応式（層3・4＝数えて求める系） */
+function hardPool() {
+  var pool = [];
+  for (var i = 0; i < CATALOG.length; i++) {
+    if (CATALOG[i].layer >= 3) pool.push(CATALOG[i]);
+  }
+  return pool;
+}
+
+/* 5層目以降で、軽めの反応式（層2）を混ぜる割合。
+   歯ごたえのある式ばかりだと続けてプレイするのがしんどいので、
+   4問に1問くらいは息抜きを入れる */
+var EASY_MIX_RATE = 0.25;
+
+/**
+ * 層に対応する反応式の候補（テストと validate 用）。
+ * 実際の出題は pickEquation を使うこと。
+ */
+export function poolForLayer(layer) {
+  if (layer >= 5) return hardPool().concat(poolOfLayer(2));
+  var pool = poolOfLayer(layer);
   // その層に十分な数がないときは、下の層も足す
   if (pool.length < 8) {
-    for (var j = 0; j < CATALOG.length; j++) {
-      if (CATALOG[j].layer <= layer && pool.indexOf(CATALOG[j]) < 0) {
-        pool.push(CATALOG[j]);
-      }
+    for (var i = 0; i < CATALOG.length; i++) {
+      if (CATALOG[i].layer <= layer && pool.indexOf(CATALOG[i]) < 0) pool.push(CATALOG[i]);
     }
   }
   return pool;
+}
+
+/** 層に応じて反応式を1つ選ぶ */
+export function pickEquation(layer) {
+  var pool;
+  if (layer >= 5) {
+    pool = Math.random() < EASY_MIX_RATE ? poolOfLayer(2) : hardPool();
+  } else {
+    pool = poolForLayer(layer);
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
 }

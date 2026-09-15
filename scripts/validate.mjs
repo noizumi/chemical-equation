@@ -4,7 +4,7 @@
  * - すべての反応式が「つり合っている」「最も簡単な整数比」であることを確認
  * - 反応式に登場する化学式がすべて物質データに登録されていることを確認
  */
-import { allGenerated as generated } from "../src/generator.js";
+import { allGenerated as generated, pickEquation as pick } from "../src/generator.js";
 import { checkBalance, equationToUnicode, parseFormula } from "../src/chem.js";
 import { EQUATIONS, SUBSTANCES, substanceByFormula, quizSubstances, judgeEquations, buildEquations, equationsByLevel } from "../src/data.js";
 
@@ -193,17 +193,37 @@ for (const e of gen) {
   genKeys.add(key);
 }
 const byLayer = {};
-for (const e of gen) byLayer[e.layer] = (byLayer[e.layer] || 0) + 1;
+const byKind = {};
+for (const e of gen) {
+  byLayer[e.layer] = (byLayer[e.layer] || 0) + 1;
+  byKind[e.kind] = (byKind[e.kind] || 0) + 1;
+  // 価数で決まる反応は、係数が大きくても手は動かないので深い層に置かない
+  if (e.kind === "valence" && e.layer > 2) {
+    fail("価数で決まる反応が深い層にある: " + e.id + " (層" + e.layer + ")");
+  }
+  if (e.kind !== "valence" && e.kind !== "count") fail("kind が不正: " + e.id);
+}
 console.log(
   "無限ラボの自動生成: " +
     gen.length +
     " 式（層ごと " +
     Object.keys(byLayer).sort().map((k) => k + "→" + byLayer[k]).join(" / ") +
-    "）"
+    " ／ 価数で決まる系 " + byKind.valence +
+    "・数えて求める系 " + byKind.count + "）"
 );
 for (const lv of [1, 2, 3, 4]) {
   if (!byLayer[lv] || byLayer[lv] < 8) fail("無限ラボ 第" + lv + "層の反応式が少なすぎる");
 }
+// 深い層でどんな反応が出るかを確認できるようにしておく
+const deep = {};
+for (let i = 0; i < 4000; i++) {
+  const e = pick(6);
+  deep[e.kind] = (deep[e.kind] || 0) + 1;
+}
+const countRate = Math.round((deep.count / 4000) * 100);
+console.log("  第5層以降の出題: 数えて求める系 " + countRate + "% / 価数で決まる系 " + (100 - countRate) + "%");
+if (countRate < 60) fail("第5層以降で、数えて求める系が少なすぎる");
+if (countRate > 95) fail("第5層以降が難しい反応ばかりになっている");
 
 if (errors > 0) {
   console.error("\n" + errors + " 件のエラー");

@@ -13,7 +13,7 @@ import {
   buildEquations,
   quizSubstances,
 } from "./data.js";
-import { poolForLayer } from "./generator.js";
+import { pickEquation } from "./generator.js";
 
 /**
  * 化学反応式マスター（中2理科「化学変化」）
@@ -850,8 +850,7 @@ function isCoeffKind(q) {
 
 /** 無限ラボの出題を1問つくる。層が上がるほど難しい反応式が出る */
 function makeLabQuestion(layer) {
-  const pool = poolForLayer(layer);
-  const eq = pool[randInt(0, pool.length - 1)];
+  const eq = pickEquation(layer);
   const givenL = eq.left.map(function () {
     return null;
   });
@@ -1081,7 +1080,7 @@ function HelpModal(props) {
           <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
             <div className="font-bold text-emerald-200">FINAL 無限ラボ</div>
             <div className="mt-1">
-              教科書にない反応式も出てくる、
+              教科書にない反応式（燃焼・還元・焙焼・工業的製法など）も出てくる、
               <span className="font-bold">終わりのないサバイバル</span>。
               持ち時間60秒から始まり、1問正解するごとに時間が増える
               （上限80秒。層が上がるほど増える時間は短くなる）。誤答は−10秒、
