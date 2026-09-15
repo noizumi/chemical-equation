@@ -920,6 +920,25 @@ function runSelfTests() {
       const res = checkBalance(eq, q.shownLeft, q.shownRight);
       console.assert(!res.balanced, "judge wrong version is unbalanced");
     }
+    // モードを足したときの書き忘れを拾う
+    for (const key in MODES) {
+      if (!Object.prototype.hasOwnProperty.call(MODES, key)) continue;
+      const m = MODES[key];
+      console.assert(!!MODE_CONFIG[m], "MODE_CONFIG に " + m + " がない");
+      console.assert(
+        !!MODE_CONFIG[m] && !!MODE_CONFIG[m].grades,
+        "grades がない: " + m
+      );
+      // 保存キーがモードごとに違うこと（コピペでかぶらせない）
+      for (const key2 in MODES) {
+        if (!Object.prototype.hasOwnProperty.call(MODES, key2)) continue;
+        if (MODES[key2] === m) continue;
+        console.assert(
+          bestStorageKey(MODES[key2]) !== bestStorageKey(m),
+          "保存キーが重複: " + m
+        );
+      }
+    }
   } catch (e) {
     // テスト失敗でもアプリは止めない
     console.log("selftest error", e);
@@ -1485,18 +1504,14 @@ export default function App() {
 
   useEffect(function () {
     runSelfTests();
+    // モードの一覧は MODE_CONFIG から拾う。手書きの配列にすると、
+    // モードを足したときに書き足し忘れて記録が読み込まれなくなる
+    // （無限ラボの記録がリロードで消えていたのはこれが原因）
     const map = {};
-    const keys = [
-      MODES.FORMULA_BASIC,
-      MODES.FORMULA_CHALLENGE,
-      MODES.COEFF_BASIC,
-      MODES.COEFF_CHALLENGE,
-      MODES.JUDGE,
-      MODES.BUILD,
-    ];
-    for (let i = 0; i < keys.length; i++) {
-      const rec = readBestRecord(keys[i]);
-      if (rec) map[keys[i]] = rec;
+    for (const key in MODE_CONFIG) {
+      if (!Object.prototype.hasOwnProperty.call(MODE_CONFIG, key)) continue;
+      const rec = readBestRecord(key);
+      if (rec) map[key] = rec;
     }
     setBestByMode(map);
     return function () {
@@ -1811,7 +1826,10 @@ export default function App() {
     // 到達0問の回は記録として残さない（「ベスト更新」が出るのがおかしいため）
     const worthRecording = !isCountMode(mode) || sec > 0;
     if (phase === "main" && !noRecord && worthRecording) {
-      const prev = recordValueOf(bestByMode[mode]);
+      // 画面の状態ではなく、保存されている記録と比べる。
+      // 読み込み漏れなどで state が空でも、良い記録を上書きしない
+      const stored = readBestRecord(mode);
+      const prev = recordValueOf(stored);
       if (isBetterRecord(mode, sec, prev)) {
         isNewBest = true;
         writeBestRecord(mode, sec);
