@@ -879,7 +879,7 @@ function makeLabQuestion(layer) {
  * 層が上がると倍率が下がっていき、いつかは必ず時間切れになる。
  * ここと LAB_MAX_BANK_MS を触れば、全体の長さを調整できる。
  */
-function labBonusMs(layer, excess) {
+function labBonusMs(layer, excess, clearedAfter) {
   const weight = typeof excess === "number" && isFinite(excess) ? excess : 0;
   const base = Math.min(36000, 12000 + 750 * weight);
   const factor = layer <= 4 ? 1 : Math.max(0.35, 1 - 0.13 * (layer - 4));
@@ -887,44 +887,40 @@ function labBonusMs(layer, excess) {
   // 深い層では上限のほうが小さくなるので、そこで頭打ちにする
   // （上限2秒の層で「＋5秒」と出ると嘘になる）
   const ms = Math.round((base * factor) / 1000) * 1000;
-  return Math.min(ms, labMaxBankMs(layer));
+  return Math.min(ms, labMaxBankMs(clearedAfter));
 }
 
-/* 持ち時間の上限（ミリ秒）。第10層（50問）までは80秒で、そこから層ごとに下げる。
+/* 持ち時間の上限（ミリ秒）。
  *
  * 上限がないと、早く解ける生徒ほど貯金が増え続けて、加算が減っても終わらない。
  * 加算の倍率には下限（0.35）があるので、それより速く解ける生徒——1問を数秒で
  * 片付ける生徒——は文字通り無限に続けられてしまっていた（1000問以上の記録が出た）。
  *
- * 第17層から一気に絞り込むのが肝。ここから先は上限そのものが
- * 「1問に使える時間」になり、解答が速い生徒ほど深くもぐれる。
- * 上限が 10秒→6秒→3.5秒→2秒 と下がっていくので、
- * 1問5秒の生徒は第17層、2秒の生徒は第20層あたりで手が止まる。
+ * 50問までは80秒のまま。ここに届く生徒はほとんどいないので体感の変化はない。
+ * そこから1問ごとに 7% ずつ絞っていく。
  *
- * 第21層（101問目）で上限が0になるため、どれだけ速くても100問で必ず詰む。
- * これは速さに依存しない上限で、ここを動かせば最大問題数が変わる。 */
-const LAB_BANK_CAP_MS = [
-  80000, // 第10層まで（1〜50問）
-  72000, // 第11層（51〜55問）
-  64000,
-  56000,
-  48000,
-  40000,
-  24000, // 第16層（76〜80問）
-  10000, // 第17層（81〜85問）ここから上限が1問の持ち時間になる
-  6000,
-  3500,
-  2000, // 第20層（96〜100問）
-  0, // 第21層（101問目）— ここで必ず終わる
-];
+ * 層ごと（5問ごと）に段差で下げると、上限が「速い生徒の解答時間の幅」
+ * （だいたい1〜13秒）を数層で通り抜けてしまい、上位の差が数問しかつかない。
+ * 1問ごとに連続で絞ると、同じ幅を25問ほどかけて通過するので差が開く。
+ *
+ * 絞り始めると上限がそのまま「1問に使える時間」になる。
+ * 1問7秒の生徒は75問、3秒なら89問、1.5秒なら100問あたりで手が止まる。
+ *
+ * 100問で上限が0になるため、どれだけ速くても100問で必ず詰む。
+ * 速さに依存しない天井で、LAB_MAX_QUESTIONS を変えれば動かせる。 */
+const LAB_BANK_START_MS = 80000;
+const LAB_SQUEEZE_FROM = 50; // ここから絞り始める（クリア問題数）
+const LAB_SQUEEZE_RATE = 0.93; // 1問ごとの減衰率
+const LAB_MAX_QUESTIONS = 100;
 
-/* 到達できる最大問題数。上限が0になる層の1つ手前まで */
-const LAB_MAX_QUESTIONS = (LAB_BANK_CAP_MS.length - 1) * 5;
-
-function labMaxBankMs(layer) {
-  if (layer <= 10) return LAB_BANK_CAP_MS[0];
-  const i = layer - 10;
-  return i < LAB_BANK_CAP_MS.length ? LAB_BANK_CAP_MS[i] : 0;
+/** cleared 問クリアした時点での持ち時間の上限 */
+function labMaxBankMs(cleared) {
+  const n = typeof cleared === "number" && isFinite(cleared) ? cleared : 0;
+  if (n < LAB_SQUEEZE_FROM) return LAB_BANK_START_MS;
+  if (n >= LAB_MAX_QUESTIONS) return 0;
+  return Math.round(
+    LAB_BANK_START_MS * Math.pow(LAB_SQUEEZE_RATE, n - LAB_SQUEEZE_FROM)
+  );
 }
 
 function buildQuestionsForMode(mode) {
@@ -1151,8 +1147,8 @@ function HelpModal(props) {
               （層が上がるほど増える時間は短くなる）。誤答は−10秒、
               スキップは−15秒。時間が尽きるまでに何問クリアできるかを競う。
               <span className="font-bold">
-                50問を超えると持ち時間の上限が層ごとに下がっていき、
-                81問目からは上限そのものが1問の持ち時間になる。
+                50問を超えると持ち時間の上限が1問ごとに下がっていき、
+                やがて上限そのものが1問の持ち時間になる。
               </span>
               どれだけ速くても100問で限界。
               係数が2桁になる問題もあるので、テンキーは数字を続けて押せば
@@ -1606,12 +1602,12 @@ export default function App() {
   }
 
   /** 持ち時間を増減する。ボーナスは画面にも短く出す */
-  function addLabMs(ms, layer) {
+  function addLabMs(ms, clearedAfter) {
     labDeadlineRef.current += ms;
     if (ms > 0) {
-      // その層の上限を超えないようにする
+      // その時点の上限を超えないようにする
       const now = pauseStartRef.current !== null ? pauseStartRef.current : Date.now();
-      const cap = now + labMaxBankMs(coalesce(layer, 1));
+      const cap = now + labMaxBankMs(coalesce(clearedAfter, 0));
       if (labDeadlineRef.current > cap) labDeadlineRef.current = cap;
     }
     setLabBonus({ ms: ms, key: Date.now() });
@@ -1928,21 +1924,17 @@ export default function App() {
       }
       const cfg = MODE_CONFIG[MODES.LAB];
       const layer = Math.floor(clearedRef.current / cfg.questionsPerLayer) + 1;
-      // 層が上がると持ち時間の上限が下がる。貯金があっても切り詰める
-      const cap = labMaxBankMs(layer);
+      // 50問を超えると持ち時間の上限が1問ごとに下がる。貯金があっても切り詰める
+      const cap = labMaxBankMs(clearedRef.current);
       const now = Date.now();
       if (labDeadlineRef.current > now + cap) labDeadlineRef.current = now + cap;
       if (cap <= 0) {
-        // 上限が0になる層に到達＝ここで必ず終わり（100問クリア）
+        // 天井に到達＝ここで必ず終わり（100問クリア）
         finishRun();
         return;
       }
-      if (
-        layer > 1 &&
-        clearedRef.current % cfg.questionsPerLayer === 0 &&
-        cap < labMaxBankMs(layer - 1)
-      ) {
-        showToast("第" + layer + "層 — 持ち時間の上限が " + formatSeconds(cap / 1000) + "秒 に");
+      if (clearedRef.current === LAB_SQUEEZE_FROM) {
+        showToast("ここから持ち時間の上限が少しずつ下がる");
       }
       const q = makeLabQuestion(layer);
       const list = questionsRef.current.concat([q]);
@@ -2328,8 +2320,8 @@ export default function App() {
       onSolved();
       clearedRef.current += 1;
       setCleared(clearedRef.current);
-      const bonus = labBonusMs(q.layer, q.eq.excess);
-      addLabMs(bonus, q.layer);
+      const bonus = labBonusMs(q.layer, q.eq.excess, clearedRef.current);
+      addLabMs(bonus, clearedRef.current);
       pauseTimer();
       setCheckLock(true);
       setOverlay({
@@ -2693,9 +2685,9 @@ export default function App() {
             <span className="ml-0.5 text-xs font-bold text-white/50">s</span>
             {/* 上限が下がっている層では、その値も見せておく。
                 いきなり時計が減ると不具合に見えるため */}
-            {isLab && labMaxBankMs(layer) < labMaxBankMs(1) ? (
+            {isLab && labMaxBankMs(cleared) < LAB_BANK_START_MS ? (
               <div className="text-[10px] font-bold leading-none text-amber-200/80">
-                上限 {formatSeconds(labMaxBankMs(layer) / 1000)}s
+                上限 {formatSeconds(labMaxBankMs(cleared) / 1000)}s
               </div>
             ) : null}
           </div>
@@ -3077,7 +3069,8 @@ export default function App() {
           {/* 重い式ほど加算が大きいことを先に見せる。
               「これは時間をかけていい問題だ」と分かるように */}
           <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-200/90">
-            正解で ＋{Math.round(labBonusMs(q.layer, q.eq.excess) / 1000)}秒
+            正解で ＋
+            {Math.round(labBonusMs(q.layer, q.eq.excess, cleared + 1) / 1000)}秒
           </span>
         </div>
         <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 px-4 py-8">
