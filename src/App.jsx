@@ -175,6 +175,10 @@ MODE_CONFIG[MODES.LAB] = {
   // 到達問題数のグレード基準（多いほど良い）。
   // 1問10〜15秒で解く想定での見積もりなので、実際の到達数を見て調整する
   grades: { ss: 35, s: 26, a: 18, b: 10 },
+  // 持ち時間の上限を層ごとに下げる仕様に変えたため、それ以前の記録
+  // （上限が一定で無限に伸ばせた頃のもの）とは比べられない。
+  // 保存キーを分けて、このモードの記録だけリセットする
+  recordVersion: 2,
   masterTitle: "ラボマスター!!",
 };
 
@@ -879,14 +883,49 @@ function labBonusMs(layer, excess) {
   const weight = typeof excess === "number" && isFinite(excess) ? excess : 0;
   const base = Math.min(36000, 12000 + 750 * weight);
   const factor = layer <= 4 ? 1 : Math.max(0.35, 1 - 0.13 * (layer - 4));
-  // 表示と実際がずれないよう、秒単位に丸めておく
-  return Math.round((base * factor) / 1000) * 1000;
+  // 表示と実際がずれないよう、秒単位に丸めておく。
+  // 深い層では上限のほうが小さくなるので、そこで頭打ちにする
+  // （上限2秒の層で「＋5秒」と出ると嘘になる）
+  const ms = Math.round((base * factor) / 1000) * 1000;
+  return Math.min(ms, labMaxBankMs(layer));
 }
 
-/* 持ち時間の上限。上限がないと、早く解ける生徒ほど貯金が増え続けて
-   加算が減っても終わらなくなる。上限に当たるのは速い生徒だけで、
-   そこから先は「減っていく加算に解答が追いつけるか」の勝負になる */
-const LAB_MAX_BANK_MS = 80000;
+/* 持ち時間の上限（ミリ秒）。第10層（50問）までは80秒で、そこから層ごとに下げる。
+ *
+ * 上限がないと、早く解ける生徒ほど貯金が増え続けて、加算が減っても終わらない。
+ * 加算の倍率には下限（0.35）があるので、それより速く解ける生徒——1問を数秒で
+ * 片付ける生徒——は文字通り無限に続けられてしまっていた（1000問以上の記録が出た）。
+ *
+ * 第17層から一気に絞り込むのが肝。ここから先は上限そのものが
+ * 「1問に使える時間」になり、解答が速い生徒ほど深くもぐれる。
+ * 上限が 10秒→6秒→3.5秒→2秒 と下がっていくので、
+ * 1問5秒の生徒は第17層、2秒の生徒は第20層あたりで手が止まる。
+ *
+ * 第21層（101問目）で上限が0になるため、どれだけ速くても100問で必ず詰む。
+ * これは速さに依存しない上限で、ここを動かせば最大問題数が変わる。 */
+const LAB_BANK_CAP_MS = [
+  80000, // 第10層まで（1〜50問）
+  72000, // 第11層（51〜55問）
+  64000,
+  56000,
+  48000,
+  40000,
+  24000, // 第16層（76〜80問）
+  10000, // 第17層（81〜85問）ここから上限が1問の持ち時間になる
+  6000,
+  3500,
+  2000, // 第20層（96〜100問）
+  0, // 第21層（101問目）— ここで必ず終わる
+];
+
+/* 到達できる最大問題数。上限が0になる層の1つ手前まで */
+const LAB_MAX_QUESTIONS = (LAB_BANK_CAP_MS.length - 1) * 5;
+
+function labMaxBankMs(layer) {
+  if (layer <= 10) return LAB_BANK_CAP_MS[0];
+  const i = layer - 10;
+  return i < LAB_BANK_CAP_MS.length ? LAB_BANK_CAP_MS[i] : 0;
+}
 
 function buildQuestionsForMode(mode) {
   // 無限ラボは1問ずつ生成して終わりがないので、最初の1問だけ作る
@@ -1109,8 +1148,13 @@ function HelpModal(props) {
               教科書にない反応式（燃焼・還元・焙焼・工業的製法など）も出てくる、
               <span className="font-bold">終わりのないサバイバル</span>。
               持ち時間60秒から始まり、1問正解するごとに時間が増える
-              （上限80秒。層が上がるほど増える時間は短くなる）。誤答は−10秒、
+              （層が上がるほど増える時間は短くなる）。誤答は−10秒、
               スキップは−15秒。時間が尽きるまでに何問クリアできるかを競う。
+              <span className="font-bold">
+                50問を超えると持ち時間の上限が層ごとに下がっていき、
+                81問目からは上限そのものが1問の持ち時間になる。
+              </span>
+              どれだけ速くても100問で限界。
               係数が2桁になる問題もあるので、テンキーは数字を続けて押せば
               10以上も入力できる。係数欄の移動は
               <span className="font-bold">「次へ ▶」</span>でもできる。
@@ -1562,12 +1606,12 @@ export default function App() {
   }
 
   /** 持ち時間を増減する。ボーナスは画面にも短く出す */
-  function addLabMs(ms) {
+  function addLabMs(ms, layer) {
     labDeadlineRef.current += ms;
     if (ms > 0) {
-      // 上限を超えないようにする
+      // その層の上限を超えないようにする
       const now = pauseStartRef.current !== null ? pauseStartRef.current : Date.now();
-      const cap = now + LAB_MAX_BANK_MS;
+      const cap = now + labMaxBankMs(coalesce(layer, 1));
       if (labDeadlineRef.current > cap) labDeadlineRef.current = cap;
     }
     setLabBonus({ ms: ms, key: Date.now() });
@@ -1855,6 +1899,7 @@ export default function App() {
       sec: sec,
       missedQuestions: missedQuestions,
       isNewBest: isNewBest,
+      reachedLimit: isLab && clearedRef.current >= LAB_MAX_QUESTIONS,
       unlockedSecret: unlockedSecret,
       unlockedDeep: unlockedDeep,
       cleared: clearedRef.current,
@@ -1883,6 +1928,22 @@ export default function App() {
       }
       const cfg = MODE_CONFIG[MODES.LAB];
       const layer = Math.floor(clearedRef.current / cfg.questionsPerLayer) + 1;
+      // 層が上がると持ち時間の上限が下がる。貯金があっても切り詰める
+      const cap = labMaxBankMs(layer);
+      const now = Date.now();
+      if (labDeadlineRef.current > now + cap) labDeadlineRef.current = now + cap;
+      if (cap <= 0) {
+        // 上限が0になる層に到達＝ここで必ず終わり（100問クリア）
+        finishRun();
+        return;
+      }
+      if (
+        layer > 1 &&
+        clearedRef.current % cfg.questionsPerLayer === 0 &&
+        cap < labMaxBankMs(layer - 1)
+      ) {
+        showToast("第" + layer + "層 — 持ち時間の上限が " + formatSeconds(cap / 1000) + "秒 に");
+      }
       const q = makeLabQuestion(layer);
       const list = questionsRef.current.concat([q]);
       questionsRef.current = list;
@@ -2268,7 +2329,7 @@ export default function App() {
       clearedRef.current += 1;
       setCleared(clearedRef.current);
       const bonus = labBonusMs(q.layer, q.eq.excess);
-      addLabMs(bonus);
+      addLabMs(bonus, q.layer);
       pauseTimer();
       setCheckLock(true);
       setOverlay({
@@ -2630,6 +2691,13 @@ export default function App() {
               <ElapsedTime read={currentElapsedSec} />
             )}
             <span className="ml-0.5 text-xs font-bold text-white/50">s</span>
+            {/* 上限が下がっている層では、その値も見せておく。
+                いきなり時計が減ると不具合に見えるため */}
+            {isLab && labMaxBankMs(layer) < labMaxBankMs(1) ? (
+              <div className="text-[10px] font-bold leading-none text-amber-200/80">
+                上限 {formatSeconds(labMaxBankMs(layer) / 1000)}s
+              </div>
+            ) : null}
           </div>
           <button
             type="button"
@@ -3469,6 +3537,17 @@ export default function App() {
               {lastResult.tooManyMisses
                 ? "あてずっぽうではなく、1問ずつ確実に答えてみよう。"
                 : "まずは復習モードで、解ける問題を増やしてみよう。"}
+            </div>
+          ) : null}
+          {lastResult.reachedLimit ? (
+            <div className="mt-4 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-500/25 via-rose-500/20 to-violet-500/25 px-4 py-4 animate-popin">
+              <div className="text-xl font-bold text-amber-200 [text-shadow:0_0_14px_rgba(251,191,36,0.6)]">
+                🏆 限界深度 到達！！
+              </div>
+              <div className="mt-1.5 text-xs font-bold leading-relaxed text-white/80">
+                {LAB_MAX_QUESTIONS}問すべて突破。これ以上は誰も潜れない、
+                無限ラボの底です。
+              </div>
             </div>
           ) : null}
           {lastResult.unlockedDeep ? (
